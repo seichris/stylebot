@@ -1,3 +1,27 @@
+## Version 3.1.4 (May 2024)
+
+- Chrome and Edge Only release
+- Migrate extension to use [Manifest v3](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
+- Improve translations (#758, #755, #734)
+
+## Version 3.1.3 (July 2022)
+
+- Skip 3.1.2 to align Firefox and Chrome Version
+- Improved Japanese translation (#714)
+- Restrict import file type to json (#708)
+- Fix bug to correctly adjust page layout when stylebot is first opened on a page
+- Fix font picker for readability
+- Fix bug with wildcard usage (#700)
+- Fix Portuguese locale configs to match locale code supported by extensions
+
+## Version 3.1.1 (July 2022)
+
+- Allow adding custom fonts via Options page (#707)
+- Fix issues and improve domain matching logic. Thanks @lionel-rowe (#690)
+- Fix style editor in Options page. Thanks @senocular (#669)
+- Add Portuguese translation. Thanks @salomaogabriel (#673)
+- Translation fixes. Thanks @WofWca @Gitoffthelawn (#697, #683, #679)
+
 ## Version 3.1 (May 2021)
 
 - Added ability to resize stylebot editor

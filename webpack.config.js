@@ -6,9 +6,8 @@ const webpack = require('webpack');
 
 const { VueLoaderPlugin } = require('vue-loader');
 const CopyPlugin = require('copy-webpack-plugin');
-const ExtensionReloader = require('webpack-extension-reloader');
+
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
-const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
 const ProgressBarPlugin = require('progress-bar-webpack-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
 
@@ -21,6 +20,7 @@ const config = {
   stats: 'errors-only',
   mode: process.env.NODE_ENV,
   context: `${__dirname}/src`,
+  devtool: 'inline-source-map',
 
   optimization: {
     minimize: process.env.NODE_ENV === 'production',
@@ -35,17 +35,6 @@ const config = {
         },
       }),
     ],
-  },
-
-  entry: {
-    'sync/index': './sync/index.ts',
-    'popup/index': './popup/index.ts',
-    'editor/index': './editor/index.ts',
-    'options/index': './options/index.ts',
-    'background/index': './background/index.ts',
-    'inject-css/index': './inject-css/index.ts',
-    'monaco-editor/iframe/index': './monaco-editor/iframe/index.ts',
-    'readability/index': './readability/index.ts',
   },
 
   output: {
@@ -126,18 +115,7 @@ const config = {
 
   plugins: [
     new ProgressBarPlugin(),
-    new webpack.DefinePlugin({
-      global: 'window',
-    }),
     new VueLoaderPlugin(),
-    new ForkTsCheckerWebpackPlugin({
-      typescript: {
-        configFile: '../tsconfig.json',
-        extensions: {
-          vue: true,
-        },
-      },
-    }),
     new MiniCssExtractPlugin({
       filename: '[name].css',
     }),
@@ -222,11 +200,6 @@ const config = {
           transform: content => {
             let jsonContent = JSON.parse(content);
 
-            if (config.mode === 'development') {
-              jsonContent['content_security_policy'] =
-                "script-src 'self' 'unsafe-eval'; object-src 'self'";
-            }
-
             if (process.env.BROWSER === 'firefox') {
               const firefoxJsonContent = JSON.parse(
                 fs.readFileSync(
@@ -254,18 +227,35 @@ if (config.mode === 'production') {
   ]);
 }
 
-if (process.env.HMR === 'true') {
-  config.plugins = (config.plugins || []).concat([
-    new ExtensionReloader({
-      manifest: __dirname + '/src/extension/manifest.json',
-    }),
-  ]);
-}
-
 function transformHtml(content) {
   return ejs.render(content.toString(), {
     ...process.env,
   });
 }
 
-module.exports = config;
+const backgroundPageConfig = {
+  ...config,
+  entry: {
+    'background/index': './background/index.ts',
+  },
+  plugins: [
+    new webpack.DefinePlugin({
+      global: 'this',
+    }),
+  ],
+};
+
+const clientConfig = {
+  ...config,
+  entry: {
+    'sync/index': './sync/index.ts',
+    'popup/index': './popup/index.ts',
+    'editor/index': './editor/index.ts',
+    'options/index': './options/index.ts',
+    'inject-css/index': './inject-css/index.ts',
+    'monaco-editor/iframe/index': './monaco-editor/iframe/index.ts',
+    'readability/index': './readability/index.ts',
+  },
+};
+
+module.exports = [backgroundPageConfig, clientConfig];
