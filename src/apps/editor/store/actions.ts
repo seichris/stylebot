@@ -1,0 +1,942 @@
+import * as postcss from 'postcss';
+import type { Commit, Dispatch } from 'vuex';
+
+import type { State } from './';
+import type storeGetters from './getters';
+
+type Getters = {
+  [K in keyof typeof storeGetters]: ReturnType<(typeof storeGetters)[K]>;
+};
+
+import {
+  addDeclaration,
+  addGoogleWebFontImport,
+  cleanGoogleWebFonts,
+  getPrimaryFontFamily,
+  getCssAfterApplyingFilterEffectToPage,
+  removeEmptyRules,
+  removeRule,
+} from '@stylebot/css';
+
+import { resolveGoogleFont } from '@stylebot/google-fonts';
+
+import type {
+  CssDeclaration,
+  Style,
+  StylebotEditingMode,
+  FilterEffect,
+  ReadabilitySettings,
+  StylebotBasicModeSections,
+  StylebotLayout,
+  StylebotDockLocation,
+  StylebotAppearance,
+  GalleryScreenshotResponse,
+  ResetGalleryProfileResponse,
+} from '@stylebot/types';
+
+import {
+  captureGalleryScreenshot,
+  getPublishedGalleryStyle,
+  openGalleryDraft,
+  resetGalleryProfile,
+} from '../utils/gallery';
+import { waitForPanelToSlideAway } from '../utils/panel-slide';
+
+import {
+  getAllOptions,
+  setOption,
+  setStyle,
+  setReadability,
+  enableStyle,
+  getCommands,
+  getReadabilitySettings,
+  setReadabilitySettings,
+  closeEditorWindow,
+  openEditorWindow,
+  requestEditorSidePanel,
+  requestCloseEditorSidePanel,
+  setActiveProfile,
+  createProfile,
+  renameProfile,
+  deleteProfile,
+} from '../utils/chrome';
+
+import type { RemotePageBridgeSyncedState } from '@stylebot/page-bridge';
+import { getPageBridge } from '@stylebot/page-bridge';
+import type { AppliedDeclaration } from '@stylebot/page-bridge';
+
+import { PLACEHOLDER_PROPERTIES } from '../utils/computed-placeholder';
+import { loadSidePanelSupport } from '../utils/side-panel';
+import { expandProfiles, isForceImportant } from '@stylebot/saved-styles';
+
+import {
+  emptyUndoStack,
+  recordChange,
+  undoChange,
+  redoChange,
+} from './undo-stack';
+import type { UndoMerge, UndoMove } from './undo-stack';
+
+export type ApplyCssArgs = {
+  css: string;
+  // Groups rapid changes into one undo step: a drag or a burst of
+  // keystrokes on one control, each from the same source.
+  source?: string;
+  // False for housekeeping (empty-rule shuffling, import cleanup) and for
+  // undo/redo itself, which must not become steps of their own.
+  record?: boolean;
+  // Whether the change can join the latest step from the same source.
+  merge?: UndoMerge;
+};
+
+const RECENT_FONTS_LIMIT = 10;
+
+/**
+ * Applies an undo or redo move.
+ */
+const stepHistory = (
+  { commit, dispatch }: { commit: Commit; dispatch: Dispatch },
+  move: UndoMove | null
+): void => {
+  if (!move) {
+    return;
+  }
+
+  commit('setUndoStack', move.undoStack);
+  dispatch('applyCss', { css: move.css, record: false });
+};
+
+// Bumped per apply/preview so that, after its awaits, a call superseded by a
+// newer one does nothing: the latest one owns the stylesheet.
+let fontRequest = 0;
+let previewRequest = 0;
+let computedStylesRequest = 0;
+let appliedDeclarationsRequest = 0;
+let pageDeclarationsRequest = 0;
+
+export default {
+  async initialize({ commit }: { commit: Commit }): Promise<void> {
+    const [options, commands, readabilitySettings] = await Promise.all([
+      getAllOptions(),
+      getCommands(),
+      getReadabilitySettings(),
+      loadSidePanelSupport(),
+    ]);
+
+    commit('setOptions', options);
+    commit('setCommands', commands);
+    commit('setReadabilitySettings', readabilitySettings);
+  },
+
+  /**
+   * Re-reads the page facts the store mirrors; a page that can't answer
+   * (navigating away) keeps the last snapshot.
+   */
+  async refreshPage({ commit }: { commit: Commit }): Promise<void> {
+    try {
+      commit('setPage', await getPageBridge().getSnapshot());
+    } catch {
+      //
+    }
+  },
+
+  initializeDefaultStyle(
+    { dispatch }: { dispatch: Dispatch },
+    defaultStyle: Style
+  ): void {
+    const { url, enabled, css, readability } = defaultStyle;
+    const forceImportant = isForceImportant(defaultStyle);
+    const { active, sheets } = expandProfiles(defaultStyle);
+
+    dispatch('syncFromPage', {
+      url,
+      enabled,
+      css,
+      readability,
+      forceImportant,
+      profiles: Object.entries(sheets).map(([id, { name }]) => ({ id, name })),
+      activeProfile: active,
+    });
+  },
+
+  /**
+   * Mirrors state the page owns — from its stored style, or, in the window
+   * host, whatever the tab reports over the port.
+   */
+  syncFromPage(
+    { commit, state: current }: { commit: Commit; state: State },
+    state: Partial<RemotePageBridgeSyncedState>
+  ): void {
+    if (state.url !== undefined) {
+      commit('setUrl', state.url);
+    }
+    if (state.profiles !== undefined) {
+      commit('setProfiles', state.profiles);
+    }
+    // Undoing past a switch would write one profile's css into another.
+    if (
+      state.activeProfile !== undefined &&
+      state.activeProfile !== current.activeProfile
+    ) {
+      commit('setActiveProfile', state.activeProfile);
+      commit('setUndoStack', emptyUndoStack());
+    }
+    if (state.enabled !== undefined) {
+      commit('setEnabled', state.enabled);
+    }
+    if (state.readability !== undefined) {
+      commit('setReadability', state.readability);
+    }
+    if (state.forceImportant !== undefined) {
+      commit('setForceImportant', state.forceImportant);
+    }
+    if (state.css !== undefined) {
+      commit('setCss', state.css);
+      commit('setSelectors', postcss.parse(state.css));
+    }
+  },
+
+  async openStylebot(
+    {
+      state,
+      commit,
+      dispatch,
+      getters,
+    }: {
+      state: State;
+      commit: Commit;
+      dispatch: Dispatch;
+      getters: Getters;
+    },
+    { inspect = false }: { inspect?: boolean } = {}
+  ): Promise<void> {
+    await dispatch('refreshPage');
+
+    if (!state.enabled) {
+      enableStyle(state.url);
+    }
+
+    commit('setVisible', true);
+
+    // Show Magic instead of the useless Basic/Code panel, without
+    // persisting over the user's actual mode preference elsewhere.
+    if (getters.readabilityActive && state.options.mode !== 'magic') {
+      commit('setOptions', { ...state.options, mode: 'magic' });
+    }
+
+    if (state.options.mode === 'basic' && inspect) {
+      commit('setInspecting', true);
+    }
+  },
+
+  closeStylebot({ state, commit }: { state: State; commit: Commit }): void {
+    if (state.host === 'window') {
+      closeEditorWindow(state.tabId ?? undefined);
+      return;
+    }
+
+    if (state.host === 'sidepanel') {
+      requestCloseEditorSidePanel(state.tabId ?? undefined);
+      return;
+    }
+
+    commit('setVisible', false);
+    commit('setUndoStack', emptyUndoStack());
+    commit('setActiveSelector', '');
+  },
+
+  escape({
+    state,
+    commit,
+    dispatch,
+  }: {
+    state: State;
+    commit: Commit;
+    dispatch: Dispatch;
+  }): void {
+    if (state.help) {
+      commit('setHelp', false);
+      return;
+    }
+
+    // A separate window closes with Cmd/Ctrl+W, and a side panel with its own button, so Escape only backs out.
+    if (state.host !== 'page') {
+      if (state.inspecting) {
+        commit('setInspecting', false);
+      }
+      return;
+    }
+
+    dispatch('closeStylebot');
+  },
+
+  /**
+   * Captures the styled page for the gallery, as taken. In the page itself,
+   * the panel slides away so the page is captured at its full width, then
+   * comes back.
+   */
+  async captureGalleryScreenshot({
+    state,
+    commit,
+  }: {
+    state: State;
+    commit: Commit;
+  }): Promise<GalleryScreenshotResponse> {
+    if (state.host !== 'page') {
+      return captureGalleryScreenshot(state.tabId ?? undefined);
+    }
+
+    commit('setCapturing', true);
+
+    try {
+      await waitForPanelToSlideAway();
+
+      return await captureGalleryScreenshot();
+    } finally {
+      commit('setCapturing', false);
+    }
+  },
+
+  /**
+   * Captures the page and hands the active profile to the gallery site to
+   * publish, in a new tab. Without a screenshot, the site asks for one.
+   */
+  async publishToGallery({
+    state,
+    getters,
+    commit,
+    dispatch,
+  }: {
+    state: State;
+    getters: Getters;
+    commit: Commit;
+    dispatch: Dispatch;
+  }): Promise<void> {
+    if (state.publishing) {
+      return;
+    }
+
+    commit('setPublishing', true);
+    commit('setInspecting', false);
+
+    try {
+      const capture: GalleryScreenshotResponse = await dispatch(
+        'captureGalleryScreenshot'
+      );
+
+      await openGalleryDraft({
+        url: state.url,
+        profileId: state.activeProfile,
+        css: removeEmptyRules(state.css),
+        profileName: getters.activeProfileName,
+        screenshot: capture.ok ? capture.screenshot : null,
+      });
+    } finally {
+      commit('setPublishing', false);
+    }
+  },
+
+  async loadPublishedGalleryStyle({
+    state,
+    commit,
+  }: {
+    state: State;
+    commit: Commit;
+  }): Promise<void> {
+    const { published, installed } = await getPublishedGalleryStyle(
+      state.url,
+      state.activeProfile
+    );
+
+    commit('setPublishedGalleryStyle', published);
+    commit('setInstalledGalleryStyle', installed);
+  },
+
+  /**
+   * Puts the gallery version back in place of the user's edits, as an undo
+   * step. The background's push of the saved styles brings the css in.
+   */
+  async resetToGalleryVersion({
+    state,
+    commit,
+  }: {
+    state: State;
+    commit: Commit;
+  }): Promise<ResetGalleryProfileResponse> {
+    const { url, activeProfile, css } = state;
+    const response = await resetGalleryProfile(url, activeProfile);
+
+    // Undoing past a profile switch would write one profile's css into another.
+    const sameProfile =
+      state.url === url && state.activeProfile === activeProfile;
+
+    if (response.ok && sameProfile) {
+      commit(
+        'setUndoStack',
+        recordChange(state.undoStack, css, 'gallery-reset', Date.now(), 'never')
+      );
+    }
+
+    return response;
+  },
+
+  setMode(
+    { state, commit }: { state: State; commit: Commit },
+    mode: StylebotEditingMode
+  ): void {
+    setOption('mode', mode);
+    commit('setOptions', { ...state.options, mode });
+  },
+
+  setLayout(
+    { state, commit }: { state: State; commit: Commit },
+    layout: StylebotLayout
+  ): void {
+    setOption('layout', layout);
+    commit('setOptions', { ...state.options, layout });
+  },
+
+  /**
+   * Persists the dock choice and moves the editor there: it opens in its new
+   * place first, then the one it was in hides or closes.
+   */
+  setDockLocation(
+    {
+      state,
+      commit,
+      dispatch,
+    }: { state: State; commit: Commit; dispatch: Dispatch },
+    dockLocation: StylebotDockLocation
+  ): void {
+    dispatch('setLayout', { ...state.options.layout, dockLocation });
+
+    const { host } = state;
+    // From the page, the background takes the tab from the sender.
+    const tabId = state.tabId ?? undefined;
+
+    if (dockLocation === host) {
+      return;
+    }
+
+    const leave = () => {
+      if (host === 'page') {
+        commit('setVisible', false);
+      } else if (host === 'window') {
+        closeEditorWindow(tabId);
+      } else {
+        requestCloseEditorSidePanel(tabId);
+      }
+    };
+
+    if (dockLocation === 'window') {
+      openEditorWindow(tabId);
+      leave();
+    } else if (dockLocation === 'sidepanel') {
+      // Sent before anything is awaited, so Chrome still sees the click's gesture.
+      requestEditorSidePanel(tabId).then(opened => {
+        if (opened) {
+          leave();
+        }
+      });
+    } else if (host !== 'page') {
+      // The page shows its panel and closes the window or side panel itself.
+      getPageBridge().openInPage(dockLocation);
+    }
+  },
+
+  setAppearance(
+    { state, commit }: { state: State; commit: Commit },
+    appearance: StylebotAppearance
+  ): void {
+    setOption('appearance', appearance);
+    commit('setOptions', { ...state.options, appearance });
+  },
+
+  setBasicModeOpenedSections(
+    { state, commit }: { state: State; commit: Commit },
+    basicModeOpenedSections: StylebotBasicModeSections
+  ): void {
+    setOption('basicModeOpenedSections', basicModeOpenedSections);
+    commit('setOptions', { ...state.options, basicModeOpenedSections });
+  },
+
+  setLastColorSet(
+    { state, commit }: { state: State; commit: Commit },
+    lastColorSet: string
+  ): void {
+    setOption('lastColorSet', lastColorSet);
+    commit('setOptions', { ...state.options, lastColorSet });
+  },
+
+  /**
+   * Moves a font to the front of the recently used list, which the font
+   * picker shows by default.
+   */
+  rememberFont(
+    { state, commit }: { state: State; commit: Commit },
+    font: string
+  ): void {
+    const fonts = [
+      font,
+      ...state.options.fonts.filter(item => item !== font),
+    ].slice(0, RECENT_FONTS_LIMIT);
+
+    setOption('fonts', fonts);
+    commit('setOptions', { ...state.options, fonts });
+  },
+
+  applyCss(
+    { commit, state }: { commit: Commit; state: State },
+    { css, source = 'edit', record = true, merge = 'recent' }: ApplyCssArgs
+  ): void {
+    // Saving empty css deletes the style, and holding none may just mean the
+    // stored one never reached the editor rather than that there is none.
+    if (!css && !state.css) {
+      return;
+    }
+
+    try {
+      const root = postcss.parse(css);
+
+      getPageBridge().applyCss({
+        url: state.url,
+        css,
+        enabled: state.enabled,
+        forceImportant: state.forceImportant,
+      });
+      setStyle(
+        state.url,
+        removeEmptyRules(css),
+        state.readability,
+        state.forceImportant,
+        state.activeProfile
+      );
+
+      if (record && css !== state.css) {
+        commit(
+          'setUndoStack',
+          recordChange(state.undoStack, state.css, source, Date.now(), merge)
+        );
+      }
+
+      commit('setCss', css);
+      commit('setSelectors', root);
+    } catch {
+      //
+    }
+  },
+
+  /**
+   * Makes another profile the one applied to the page. The background's
+   * push of the saved styles brings its css into the editor.
+   */
+  switchProfile({ state }: { state: State }, id: string): void {
+    if (id !== state.activeProfile) {
+      setActiveProfile(state.url, id);
+    }
+  },
+
+  /**
+   * Adds a profile, blank or a copy of another, and switches to it.
+   */
+  async createProfile(
+    { state }: { state: State },
+    { name, sourceProfileId }: { name: string; sourceProfileId?: string }
+  ): Promise<void> {
+    await createProfile(state.url, name, sourceProfileId);
+  },
+
+  /**
+   * Renames a profile, showing the new name before the background confirms
+   * it so the row doesn't flash back to the old one.
+   */
+  renameProfile(
+    { state, commit }: { state: State; commit: Commit },
+    { id, name }: { id: string; name: string }
+  ): void {
+    commit(
+      'setProfiles',
+      state.profiles.map(profile =>
+        profile.id === id ? { ...profile, name } : profile
+      )
+    );
+    renameProfile(state.url, id, name);
+  },
+
+  deleteProfile({ state }: { state: State }, id: string): void {
+    deleteProfile(state.url, id);
+  },
+
+  /**
+   * Switches whether the style has `!important` forced onto every
+   * declaration or is applied exactly as written, and reapplies it.
+   */
+  setForceImportant(
+    {
+      state,
+      commit,
+      dispatch,
+    }: {
+      state: State;
+      commit: Commit;
+      dispatch: Dispatch;
+    },
+    value: boolean
+  ): void {
+    commit('setForceImportant', value);
+    dispatch('applyCss', { css: state.css });
+  },
+
+  /**
+   * Re-reads the computed styles the basic editor shows as placeholders;
+   * a read overtaken by a newer one is dropped.
+   */
+  async refreshComputedStyles({
+    commit,
+    state,
+    getters,
+  }: {
+    commit: Commit;
+    state: State;
+    getters: { inspectedSelector: string };
+  }): Promise<void> {
+    const request = ++computedStylesRequest;
+    let styles: Record<string, string> = {};
+
+    const selector = getters.inspectedSelector;
+
+    if (selector && state.pageConnected) {
+      try {
+        styles = await getPageBridge().getComputedStyles(
+          selector,
+          PLACEHOLDER_PROPERTIES
+        );
+      } catch {
+        //
+      }
+    }
+
+    if (request === computedStylesRequest) {
+      commit('setComputedStyles', styles);
+    }
+  },
+
+  /**
+   * Fetches other selectors for the element just picked, which the
+   * selector dropdown offers under the element.
+   */
+  async loadSelectorAlternatives(
+    { commit }: { commit: Commit },
+    selector: string
+  ): Promise<void> {
+    commit('setSelectorAlternatives', { existing: [], candidates: [] });
+
+    try {
+      commit(
+        'setSelectorAlternatives',
+        await getPageBridge().getSelectorAlternatives(selector)
+      );
+    } catch {
+      //
+    }
+  },
+
+  /**
+   * Re-reads the user's Stylebot declarations in effect on the inspected
+   * element, for the basic editor's inline hints; a read overtaken by a
+   * newer one is dropped.
+   */
+  async refreshAppliedDeclarations({
+    commit,
+    state,
+    getters,
+  }: {
+    commit: Commit;
+    state: State;
+    getters: { inspectedSelector: string };
+  }): Promise<void> {
+    const request = ++appliedDeclarationsRequest;
+    let declarations: Array<AppliedDeclaration> = [];
+
+    const selector = getters.inspectedSelector;
+
+    if (selector && state.pageConnected) {
+      try {
+        declarations = await getPageBridge().getAppliedDeclarations(selector);
+      } catch {
+        //
+      }
+    }
+
+    if (request === appliedDeclarationsRequest) {
+      commit('setAppliedDeclarations', declarations);
+    }
+  },
+
+  /**
+   * Re-reads what the page's own CSS applies to the inspected element, for
+   * More Properties; a read overtaken by a newer one is dropped.
+   */
+  async refreshPageDeclarations({
+    commit,
+    state,
+    getters,
+  }: {
+    commit: Commit;
+    state: State;
+    getters: { inspectedSelector: string };
+  }): Promise<void> {
+    const request = ++pageDeclarationsRequest;
+    let declarations: Array<CssDeclaration> = [];
+
+    const selector = getters.inspectedSelector;
+
+    if (selector && state.pageConnected) {
+      try {
+        declarations = await getPageBridge().getPageDeclarations(selector);
+      } catch {
+        //
+      }
+    }
+
+    if (request === pageDeclarationsRequest) {
+      commit('setPageDeclarations', declarations);
+    }
+  },
+
+  /**
+   * Steps the css back to before the latest change, through the same path
+   * an edit takes so the page and storage follow.
+   */
+  undo({
+    state,
+    commit,
+    dispatch,
+  }: {
+    state: State;
+    commit: Commit;
+    dispatch: Dispatch;
+  }): void {
+    stepHistory({ commit, dispatch }, undoChange(state.undoStack, state.css));
+  },
+
+  redo({
+    state,
+    commit,
+    dispatch,
+  }: {
+    state: State;
+    commit: Commit;
+    dispatch: Dispatch;
+  }): void {
+    stepHistory({ commit, dispatch }, redoChange(state.undoStack, state.css));
+  },
+
+  applyDeclaration(
+    { state, dispatch }: { state: State; dispatch: Dispatch },
+    { property, value }: { property: string; value: string }
+  ): void {
+    if (!state.activeSelector) {
+      return;
+    }
+
+    const css = addDeclaration(
+      property,
+      value,
+      state.activeSelector,
+      state.css
+    );
+
+    dispatch('applyCss', {
+      css,
+      source: `declaration:${state.activeSelector}:${property}`,
+    });
+  },
+
+  resetActiveRule({
+    state,
+    dispatch,
+  }: {
+    state: State;
+    dispatch: Dispatch;
+  }): void {
+    if (!state.activeSelector) {
+      return;
+    }
+
+    const css = removeRule(state.css, state.activeSelector);
+    dispatch('applyCss', { css, source: 'reset' });
+  },
+
+  /**
+   * Applies a font-family value, then imports its first family if Google
+   * serves it. Only explicit picks are remembered as recents.
+   */
+  async applyFontFamily(
+    { state, dispatch }: { state: State; dispatch: Dispatch },
+    { value, remember = false }: { value: string; remember?: boolean }
+  ): Promise<void> {
+    const request = ++fontRequest;
+    const family = getPrimaryFontFamily(value);
+
+    dispatch('applyDeclaration', { property: 'font-family', value });
+
+    if (family && remember) {
+      dispatch('rememberFont', family);
+    }
+
+    const googleFont = family ? await resolveGoogleFont(family) : null;
+
+    if (request !== fontRequest) {
+      return;
+    }
+
+    // Read the css only now: other edits may have landed during the awaits.
+    const withImport = googleFont
+      ? addGoogleWebFontImport(googleFont, state.css)
+      : state.css;
+    const css = cleanGoogleWebFonts(withImport);
+
+    // The import belongs to the font pick the user already made; undoing
+    // that pick takes the import with it.
+    if (css !== state.css) {
+      dispatch('applyCss', { css, record: false });
+    }
+
+    getPageBridge().setPreviewCss(null);
+  },
+
+  /**
+   * Shows a font-family value on the active selector without saving it, via
+   * a separate stylesheet. An empty value removes the preview.
+   */
+  async previewFontFamily(
+    { state }: { state: State },
+    value: string
+  ): Promise<void> {
+    const request = ++previewRequest;
+
+    if (!state.activeSelector) {
+      return;
+    }
+
+    if (!value) {
+      getPageBridge().setPreviewCss(null);
+      return;
+    }
+
+    const family = getPrimaryFontFamily(value);
+    let css = `${state.activeSelector} { font-family: ${value}; }`;
+
+    const googleFont = family ? await resolveGoogleFont(family) : null;
+
+    if (googleFont) {
+      css = addGoogleWebFontImport(googleFont, css);
+    }
+
+    if (request !== previewRequest) {
+      return;
+    }
+
+    // Typed text may not be valid CSS; then there's nothing to preview.
+    try {
+      postcss.parse(css);
+    } catch {
+      return;
+    }
+
+    getPageBridge().setPreviewCss({
+      css,
+      forceImportant: state.forceImportant,
+    });
+  },
+
+  /**
+   * Shows a declaration on the active selector without saving it, in the
+   * same stylesheet as the font preview. An empty value removes the preview.
+   */
+  previewDeclaration(
+    { state }: { state: State },
+    { property, value }: { property: string; value: string }
+  ): void {
+    ++previewRequest;
+
+    if (!state.activeSelector) {
+      return;
+    }
+
+    if (!value) {
+      getPageBridge().setPreviewCss(null);
+      return;
+    }
+
+    getPageBridge().setPreviewCss({
+      css: `${state.activeSelector} { ${property}: ${value}; }`,
+      forceImportant: state.forceImportant,
+    });
+  },
+
+  applyReadability(
+    { state, commit }: { state: State; commit: Commit },
+    value: boolean
+  ): void {
+    getPageBridge().applyReadability(value);
+    setReadability(state.url, value);
+
+    // Editing page CSS has no effect while readability is running — its DOM
+    // is detached from the document, not just hidden. Switch the panel to
+    // Magic locally without persisting over the user's global mode
+    // preference (mirrors openStylebot's readabilityActive handling above).
+    if (value && ['basic', 'code'].includes(state.options.mode)) {
+      commit('setOptions', { ...state.options, mode: 'magic' });
+    }
+
+    commit('setReadability', value);
+  },
+
+  setReadabilitySettings(
+    { commit }: { commit: Commit },
+    value: ReadabilitySettings
+  ): void {
+    setReadabilitySettings(value);
+    commit('setReadabilitySettings', value);
+  },
+
+  applyFilter(
+    {
+      state,
+      commit,
+      dispatch,
+    }: {
+      state: State;
+      commit: Commit;
+      dispatch: Dispatch;
+    },
+    {
+      effectName,
+      percent,
+    }: {
+      effectName: FilterEffect;
+      percent: string;
+    }
+  ): void {
+    // Filters attach to body's current children: read them now where the
+    // page is at hand, else use the last snapshot and refresh for next time.
+    const fresh = getPageBridge().getSnapshotSync?.();
+    if (fresh) {
+      commit('setPage', fresh);
+    } else {
+      dispatch('refreshPage');
+    }
+
+    dispatch('applyCss', {
+      css: getCssAfterApplyingFilterEffectToPage(
+        effectName,
+        state.css,
+        percent,
+        (fresh ?? state.page).bodyChildSelectors
+      ),
+      source: `filter:${effectName}`,
+    });
+  },
+};

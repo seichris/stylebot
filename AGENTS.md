@@ -1,0 +1,107 @@
+# Stylebot
+
+Browser extension (Chrome/Edge/Firefox) that lets users change the appearance of any website via a visual CSS editor. Vue 2 + TypeScript, built with webpack.
+
+## Structure
+
+- `src/` — extension source, grouped into tiers. Each folder directly inside a tier is a package, imported as `@stylebot/<folder>` (resolved by `scripts/lib/src-packages.js`; `@stylebot/inject-css` keeps its old name for `apps/content`):
+  - `src/apps/` — webpack entries and HTML pages: `background`, `popup`, `options`, `editor` (with the pop-out window in `editor/window`), `content` (the content script), `reader` (the readability UI bundle), `cli-inspector` (what the CLI reads and does on a page, loaded on its first request), `side-panel-default` (the manifest's default side panel, which closes itself; only Vivaldi shows it), `monaco-iframe`
+  - `src/features/` — capabilities shared by apps: `sync`, `history`, `page-bridge`, `highlighter`, `google-fonts`, `readability` (eligibility and reader lifecycle), `side-panel` (the editor's side panel and its optional permission), `monaco-editor`
+  - `src/ui/` — `components`, `icons`, `scss`
+  - `src/core/` — `css`, `stylesheets`, `saved-styles`, `types`, `settings`, `i18n`, `google-auth` (Google sign-in, shared by sync and the gallery), `utils`
+  - `src/assets/` — `manifest` (base manifest, a module per browser that extends it, and the dev store keys), `icon` (the extension icon: SVG sources and the PNGs the build copies to `img/`), `fonts`, `_locales` (i18n strings per locale)
+- Imports only point down: apps → features, ui, core; features → ui, core; ui → ui, core; core → core. Nothing imports an app, and features don't import each other. The `stylebot/tier-imports` lint rule enforces this; the few imports that predate it are allowlisted in `eslint/rules/tier-imports.mjs` — remove entries, never add them.
+- `tools/cli/` — the `stylebot` command line (`yarn stylebot`), which drives the extension in a running browser through a native messaging host, once it's turned on in Stylebot's options; see `docs/cli.md`
+- `tools/agent-plugin/` — the Claude Code plugin: a `/stylebot` skill for restyling pages with the CLI, listed in the repo's `.claude-plugin/marketplace.json`
+- `evals/styling/` — `yarn eval:styling`, which compares how well Claude restyles recorded pages through the `/stylebot` skill and the CLI between two versions, running the agent in headless Claude Code; see `docs/styling-evals.md`
+- `e2e/` — Playwright end-to-end tests, driven against a real built extension: via CDP (`Extensions.loadUnpacked`) on Chrome/Edge, via Firefox's remote debugging protocol on Firefox; engine-specific code lives in `e2e/chromium/` and `e2e/firefox/` behind the `e2e/engine.ts` contract
+- `jest/` — Jest setup and the stylesheet stub
+- `dist/` — Chrome/Edge build output; `firefox-dist/` — Firefox build output; `preview-dist/` — `yarn build:preview` output
+- `store/` — store listing art (promo tiles, screenshots) per store; not part of the build. `yarn capture:store` retakes the screenshots; `store/video/` makes the demo video (see its README)
+- `captures/` — git-ignored output of the `capture:*` scripts that shoot screenshots for stylebot.dev, whose source is its own repo, [stylebot-site](https://github.com/ankit/stylebot-site); copy them into that repo by hand
+- `docs/` — developer docs: setup, releases, translation, e2e, architecture (editor, side panel, selectors, CSS, readability, profiles, sync)
+- `patches/` — patch-package patches applied to dependencies on install
+
+## Workflow
+
+Always make changes in a new worktree, never directly on `main` or the checkout the
+session started in. Use the `EnterWorktree` tool before starting any edits, unless the
+session is already inside a worktree.
+
+## Commands
+
+- `yarn watch` — build for Chrome/Edge in watch mode
+- `yarn watch:firefox` — build for Firefox in watch mode
+- `yarn build:preview` — production build for local testing (not release) into `preview-dist/`, with the store's public key so it gets the store id
+- `yarn preview:chrome` / `preview:edge` / `preview:firefox` / `preview:safari` — production build, then launch it in that browser. Production builds need `STYLEBOT_GOOGLE_CLIENT_SECRET`, the Desktop OAuth client's secret that Drive sign-in uses
+- `yarn dev:chrome` — watch + launch a Chrome instance with the extension loaded
+- `yarn dev:chrome:locale <locale>` — the same, with the browser and extension in another language (e.g. `vi`), in its own profile
+- `yarn lint` / `yarn lint:fix` — ESLint
+- `yarn typecheck` — `tsc --noEmit` for the extension, then again with `.storybook/tsconfig.json` for Storybook config and stories
+- `yarn test` — Jest unit tests
+- `yarn e2e` — builds the extension then runs the Playwright e2e suite headless on Chrome, as CI does. `--edge` / `--firefox` switch browser, `--headed` / `--ui` / `--debug` switch mode, `--no-build` skips the rebuild; see `docs/e2e.md`.
+- `yarn test:storybook` — builds Storybook and runs every story headless with `@storybook/test-runner`, asserting the `play` functions. `--no-build` reuses `storybook-static`; `--dev --watch <path>` runs against a `yarn storybook` already on :6006.
+- `yarn capture:store` — builds the extension and retakes the store screenshots in `store/screenshots/` on live sites, headless; `--only <name>` retakes some. Use the `capture-store` skill, which checks each image.
+- `yarn capture:gallery` — builds the extension and retakes the stylebot.dev gallery's theme screenshots into `captures/gallery/` (or `--out <dir>`), headless, from the themes in a sibling stylebot-site checkout's `src/assets/gallery/` (or `--themes <dir>`); `hn/newspaper` or `hn` retakes some. Use the `capture-gallery` skill, which checks each image.
+- `yarn capture:manual` — builds the extension and retakes the stylebot.dev manual's and 4.0 release page's screenshots into `captures/manual/` (or `--out <dir>`), light and dark, headless; `sync history` retakes some. Check each image before committing.
+- `yarn capture:cli-mode` — builds the extension and takes the stylebot.dev command line page's CLI mode screenshots into `captures/cli/` (or `--out <dir>`): live Hacker News connected, marked and noted, then answered with a change. Check each image before committing.
+- `yarn storybook` — Storybook 7.6 (last line with Vue 2 support) for the shared primitives and popup/options/editor composites, with a light/dark toolbar
+
+## Validation
+
+Always validate UI/extension changes headless, not with manual/headed browser interaction, and confirm a change works with the relevant suite before calling it done.
+
+- **Storybook interaction tests** (`yarn test:storybook`) cover behaviour that lives inside a Vue surface: the editor panel, popup, options page. Only what needs the real extension goes to e2e.
+- **Playwright e2e** (`yarn e2e`, or a targeted spec like `yarn e2e --no-build editor-open`) covers extension plumbing: popup/background/content-script messaging, storage persistence across reloads, CSS injected into a real page, web-font fetches, Firefox/Edge. `e2e/fixtures.ts` loads the real unpacked extension via CDP.
+
+Stories:
+
+- Stories live beside their component as `*.stories.ts`; give new shared primitives a story.
+- Visual stories only set up the state they show — a `play` may open a menu and wait for it, nothing more.
+- Interaction tests go in a separate `*.interactions.stories.ts` file titled `Tests/<Surface>/<Feature>` with `tags: ['test']`, so they sit in their own sidebar root.
+- Each test is an object literal spreading its factory (`...editor(state)`) with a spec-style `name` sentence and its `play`. Storybook only picks `name` up from the literal, not through a factory call.
+- Use `@storybook/test` (`within`, `expect`, `waitFor`) and the helpers in `.storybook/story-helpers.ts`; group longer plays into `step('…', …)` phases.
+- Drive input through the shared `user` from `story-helpers` (not `userEvent` directly) so the toolbar's Slow motion toggle applies, and hover page elements while inspecting via `hoverPage`/`pick`, which first let the browser settle its own hover state.
+
+## Mocks and fixtures
+
+A mock stands in for a module or browser API; a fixture is seeded data or a seeded surface that tests and stories build on.
+
+- Jest: no `__mocks__/` or `__fixtures__/` folders. Mock with `jest.mock()` in the test, passing a factory when automocking isn't enough; shared test data goes in a `*.fixtures.ts` file beside the code that uses it, as tests do in `*.test.ts`.
+- Storybook: `.storybook/mocks/` holds only stand-ins (the chrome shim, modules aliased in `main.ts`); `.storybook/fixtures/` holds the seeded stores and the surface factories stories spread (`editor`, `popup`, `optionsPage`).
+- e2e: `e2e/fixtures.ts` holds Playwright fixtures.
+
+## Side effects
+
+`package.json` declares stylesheets and single-file components as having `sideEffects`, so webpack drops any other module whose exports go unused, in development builds as well as production. Components are listed because a treeshakeable component is free to have its `<style>` block emitted out of order, and a consumer's class on a shared component ties with that component's own class on specificity — so whichever lands last silently wins. Keep modules free of work on load: register listeners, call `Vue.use` / `Vue.mixin` and create stores from functions an entry point calls, never at a module's top level.
+
+Import another package only through its `@stylebot/` entry, never its files; the `stylebot/package-entry-imports` lint rule enforces it. With `sideEffects`, an entry import costs no more than a deep one.
+
+## Styles
+
+Reuse the mixins in `src/ui/scss/mixins.scss` (prepended to every stylesheet) instead of copying their declarations; never add shared utility classes, for the specificity reason above. Mixins that only emit declarations (`button-reset`, `truncate`, `field-border`) go at the top of a rule, followed by a blank line. Mixins that emit nested rules (`focus-ring`, `dark-mode`) go with the other nested rules, after the declarations.
+
+## Commit messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) format: `<type>[optional scope]: <description>` (e.g. `fix: correct Firefox extension launch`, `feat(editor): add JS snippet execution`). Common types: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`.
+
+## Comments
+
+Avoid comments by default. Only add one to state something non-obvious — a hidden constraint, a workaround, a reason that isn't clear from the code itself. Never add comments in CSS. When a comment is warranted, keep it to 1-2 lines max, and use `/* */` for multiline comments.
+
+Comments on functions and methods use JSDoc style, always in this shape:
+
+```ts
+/**
+ * What the function does, in plain prose.
+ * A second line if the first doesn't fit.
+ */
+```
+
+`/**` and `*/` each go on their own line — never `/** text */` on one line. Up to 4 lines of prose is fine. Never use `@` tags (`@param`, `@returns`, `@throws`, etc.); the TypeScript signature already documents those.
+
+## i18n
+
+Never hardcode user-facing strings — always add an i18n key in `src/assets/_locales/*.config` (every locale) and reference it via `t('key')`. This applies to every string a user sees: labels, placeholders, titles, aria-labels, error messages. Write the English, then use the `translate` skill to fill in the other locales; `yarn validate-locales` fails until every locale has it.
+
+Keep each key matching its English string (e.g. `@box` → `Box`, not a stale `@layout_properties` → `Box`). When a string's copy changes, rename the key to match in the same change, across all 15 locale files. If two keys end up with the identical string in every locale, collapse them into one key instead of keeping duplicates.

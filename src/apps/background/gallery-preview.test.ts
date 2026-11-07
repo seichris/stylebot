@@ -1,0 +1,615 @@
+const dedent = require('dedent');
+
+import fetchMock from 'jest-fetch-mock';
+
+import { style } from '../../features/gallery/gallery.fixtures';
+import {
+  endGalleryPreviewOffSite,
+  getGalleryPreview,
+  installGalleryPreview,
+  openGalleryPreview,
+  setGalleryPreviewOption,
+  startGalleryPreview,
+  undoGalleryInstall,
+} from './gallery-preview';
+import { hashCss } from '@stylebot/gallery';
+import type { GalleryListing, StyleMap } from '@stylebot/types';
+
+import {
+  disable,
+  getAll,
+  installProfile,
+  reinstallProfile,
+  restoreStyles,
+  setStyleOption,
+} from './styles';
+
+jest.mock('./styles', () => ({
+  disable: jest.fn(async () => undefined),
+  getAll: jest.fn(async () => ({})),
+  installProfile: jest.fn(async () => ({ name: 'Tokyo Night', id: 'p1' })),
+  reinstallProfile: jest.fn(async () => 'Mine'),
+  applyStylesToAllTabs: jest.fn(async () => undefined),
+  restoreStyles: jest.fn(async () => undefined),
+  setStyleOption: jest.fn(async () => undefined),
+}));
+
+const TAB_ID = 7;
+const GALLERY_TAB_ID = 3;
+
+let store: Record<string, unknown>;
+
+/**
+ * Session, local and sync storage share one in-memory store; their keys differ.
+ */
+const area = () => ({
+  get: jest.fn(async (key: string) => ({ [key]: store[key] })),
+  set: jest.fn(async (items: Record<string, unknown>) => {
+    Object.assign(store, items);
+  }),
+});
+
+const styleResponse = (css: string, urlPattern: string | null = null) =>
+  fetchMock.mockResponseOnce(JSON.stringify({ ...style, urlPattern, css }));
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  fetchMock.resetMocks();
+  store = {};
+  global.chrome = {
+    runtime: { lastError: undefined },
+    storage: { session: area(), local: area(), sync: area() },
+    tabs: {
+      get: jest.fn(async () => ({ id: TAB_ID, url: 'https://github.com/' })),
+      create: jest.fn(async () => ({ id: TAB_ID })),
+      update: jest.fn(async () => ({ id: TAB_ID })),
+      sendMessage: jest.fn(),
+    },
+  } as unknown as typeof chrome;
+});
+
+describe('gallery preview', () => {
+  it('compiles a style, keeps it for the tab and its site, and tells the tab', async () => {
+    styleResponse('@import url(https://example.com/a.css);\na { color: red; }');
+
+    await startGalleryPreview(TAB_ID, style.id);
+
+    const preview = await getGalleryPreview(TAB_ID);
+
+    expect(preview).toMatchObject({
+      style: { id: style.id, site: 'github.com' },
+      css: 'a { color: red !important; }',
+      importUrls: ['https://example.com/a.css'],
+    });
+    expect(store.galleryPreviewSites).toEqual(['github.com']);
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
+      TAB_ID,
+      { name: 'ShowGalleryPreview', preview, replacedUrls: ['github.com'] },
+      expect.any(Function)
+    );
+  });
+
+  it('carries the options a style declares, at their defaults', async () => {
+    styleResponse(dedent`
+      /**
+       * ==Stylebot==
+       * @option scheme select [system, light, dark] dark
+       * ==/Stylebot==
+       */
+      a { color: red; }
+    `);
+
+    await startGalleryPreview(TAB_ID, style.id);
+
+    expect(await getGalleryPreview(TAB_ID)).toMatchObject({
+      options: { scheme: { type: 'select', default: 'dark' } },
+      values: { scheme: 'dark' },
+    });
+  });
+
+  it('tells the tab to replace the style it was installed in before', async () => {
+    (getAll as jest.Mock).mockResolvedValue({
+      'github.com': { css: 'p {}', enabled: true },
+      'github.com/*': {
+        css: 'a {}',
+        enabled: true,
+        readability: false,
+        modifiedTime: '',
+        activeProfile: 'p0',
+        profiles: {
+          p0: {
+            name: 'Tokyo Night',
+            galleryListing: {
+              styleId: style.id,
+              slug: 'tokyo-night',
+              version: 2,
+              cssHash: hashCss('a {}'),
+              published: false,
+            },
+          },
+        },
+      },
+    });
+    styleResponse('a {}');
+
+    await startGalleryPreview(TAB_ID, style.id);
+
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
+      TAB_ID,
+      expect.objectContaining({ replacedUrls: ['github.com/*'] }),
+      expect.any(Function)
+    );
+  });
+
+  describe('on a page several saved styles match', () => {
+    const saved = (css: string, enabled = true) => ({
+      css,
+      enabled,
+      readability: false,
+      modifiedTime: '',
+    });
+
+    it.each([
+      ['a global style', { '*': saved('p {}') }, 'github.com'],
+      [
+        'a less specific style',
+        { 'github.*': saved('p {}', false) },
+        'github.com/*',
+      ],
+    ])(
+      'previews in place of the active style when %s is saved first',
+      async (_, first, expected) => {
+        (getAll as jest.Mock).mockResolvedValue({
+          ...first,
+          [expected]: saved('a {}'),
+        });
+        styleResponse('a {}');
+
+        await startGalleryPreview(TAB_ID, style.id);
+
+        expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
+          TAB_ID,
+          expect.objectContaining({ replacedUrls: [expected] }),
+          expect.any(Function)
+        );
+      }
+    );
+
+    it("installs in the site's own style, not a global one saved first", async () => {
+      (getAll as jest.Mock).mockResolvedValue({
+        '*': saved('p {}'),
+        'github.com': saved('a {}'),
+      });
+      styleResponse('a {}');
+      await startGalleryPreview(TAB_ID, style.id);
+      fetchMock.mockResponseOnce(JSON.stringify({ ...style, css: 'a {}' }));
+
+      await installGalleryPreview(TAB_ID);
+
+      expect(installProfile).toHaveBeenCalledWith(
+        'github.com',
+        expect.anything()
+      );
+    });
+
+    it('starts a style for the host when only a global style matches', async () => {
+      (getAll as jest.Mock).mockResolvedValue({ '*': saved('p {}') });
+      styleResponse('a {}');
+
+      await startGalleryPreview(TAB_ID, style.id);
+
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
+        TAB_ID,
+        expect.objectContaining({ replacedUrls: ['github.com'] }),
+        expect.any(Function)
+      );
+    });
+  });
+
+  it("doesn't tell a tab that isn't on a web page yet", async () => {
+    (chrome.tabs.get as jest.Mock).mockResolvedValue({
+      id: TAB_ID,
+      url: 'about:blank',
+    });
+    styleResponse('a {}');
+
+    await startGalleryPreview(TAB_ID, style.id);
+
+    expect(chrome.tabs.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('opens the style’s site only once its preview is saved', async () => {
+    fetchMock.mockResponse(JSON.stringify({ ...style, css: 'a {}' }));
+    (chrome.tabs.update as jest.Mock).mockImplementation(async () => {
+      expect(store.galleryPreviewSites).toEqual(['github.com']);
+    });
+
+    await openGalleryPreview(style.id, {
+      id: GALLERY_TAB_ID,
+      index: 0,
+      windowId: 1,
+    } as chrome.tabs.Tab);
+
+    expect(chrome.tabs.update).toHaveBeenCalledWith(TAB_ID, {
+      url: 'https://github.com/',
+    });
+  });
+
+  it('keeps the preview around the site, and ends it off the site', async () => {
+    styleResponse('a {}');
+    await startGalleryPreview(TAB_ID, style.id);
+
+    await endGalleryPreviewOffSite(TAB_ID, 'https://www.github.com/issues');
+    await endGalleryPreviewOffSite(TAB_ID, 'about:blank');
+    expect(await getGalleryPreview(TAB_ID)).not.toBeNull();
+
+    await endGalleryPreviewOffSite(TAB_ID, 'https://example.com/');
+    expect(await getGalleryPreview(TAB_ID)).toBeNull();
+    expect(store.galleryPreviewSites).toEqual([]);
+  });
+
+  describe('with options', () => {
+    const declares = (fallback: string) => dedent`
+      /**
+       * ==Stylebot==
+       * @option scheme select [system, light, dark] ${fallback}
+       * @var checkbox rounded "Rounded" 0
+       * ==/Stylebot==
+       */
+      a {}
+    `;
+
+    const install = async (fallback: string) => {
+      (getAll as jest.Mock).mockResolvedValue({
+        'github.com': { css: '', enabled: true },
+      });
+      styleResponse(declares(fallback));
+      await startGalleryPreview(TAB_ID, style.id);
+      fetchMock.mockResponseOnce(
+        JSON.stringify({ ...style, css: declares(fallback) })
+      );
+    };
+
+    it('keeps the values picked in the preview, and installs with them', async () => {
+      await install('system');
+      await setGalleryPreviewOption(TAB_ID, 'scheme', 'dark');
+      await setGalleryPreviewOption(TAB_ID, 'rounded', '1');
+
+      expect(await getGalleryPreview(TAB_ID)).toMatchObject({
+        values: { scheme: 'dark', rounded: '1' },
+      });
+
+      await installGalleryPreview(TAB_ID);
+
+      expect(setStyleOption).toHaveBeenCalledWith(
+        'github.com',
+        'default',
+        'scheme',
+        'dark'
+      );
+      expect(setStyleOption).toHaveBeenCalledWith(
+        'github.com',
+        'default',
+        'rounded',
+        '1'
+      );
+    });
+
+    it('ignores a value the option does not declare', async () => {
+      await install('system');
+      await setGalleryPreviewOption(TAB_ID, 'scheme', 'sepia');
+
+      expect(await getGalleryPreview(TAB_ID)).toMatchObject({
+        values: { scheme: 'system' },
+      });
+    });
+
+    it("doesn't store a pick that is the declared default", async () => {
+      await install('dark');
+      await setGalleryPreviewOption(TAB_ID, 'scheme', 'dark');
+      await installGalleryPreview(TAB_ID);
+
+      expect(setStyleOption).not.toHaveBeenCalled();
+    });
+  });
+
+  it("installs the preview as a profile of the page's style and tells the gallery", async () => {
+    store['gallery-install-id'] = 'install-1';
+    (getAll as jest.Mock).mockResolvedValue({
+      'github.com': { css: '', enabled: true },
+    });
+    styleResponse('a {}');
+    await startGalleryPreview(TAB_ID, style.id, GALLERY_TAB_ID);
+    fetchMock.mockResponseOnce(
+      JSON.stringify({
+        ...style,
+        name: 'Tokyo Night',
+        css: 'a { color: red; }',
+      })
+    );
+
+    expect(await installGalleryPreview(TAB_ID)).toBe('Tokyo Night');
+    expect(installProfile).toHaveBeenCalledWith('github.com', {
+      name: 'Tokyo Night',
+      css: 'a { color: red; }',
+      galleryListing: {
+        styleId: style.id,
+        slug: 'tokyo-night',
+        version: 2,
+        cssHash: hashCss('a { color: red; }'),
+        published: false,
+      },
+    });
+    expect(await getGalleryPreview(TAB_ID)).toBeNull();
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
+      TAB_ID,
+      { name: 'HideGalleryPreview', installed: true },
+      expect.any(Function)
+    );
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
+      GALLERY_TAB_ID,
+      {
+        name: 'GalleryStyleInstalled',
+        id: style.id,
+        profileName: 'Tokyo Night',
+      },
+      expect.any(Function)
+    );
+  });
+
+  describe('a style published for a url pattern', () => {
+    const PATTERN = '^https://github\\.com/(?!settings)';
+
+    beforeEach(() => {
+      store['gallery-install-id'] = 'install-1';
+      (getAll as jest.Mock).mockResolvedValue({
+        'github.com': { css: 'p {}', enabled: true },
+      });
+    });
+
+    /**
+     * Previews the style on a tab at pageUrl, then installs it.
+     */
+    const install = async (pageUrl: string) => {
+      (chrome.tabs.get as jest.Mock).mockResolvedValue({
+        id: TAB_ID,
+        url: pageUrl,
+      });
+      styleResponse('a {}', PATTERN);
+      await startGalleryPreview(TAB_ID, style.id);
+      fetchMock.mockResponseOnce(JSON.stringify({ ...style, css: 'a {}' }));
+
+      return installGalleryPreview(TAB_ID);
+    };
+
+    it("previews in place of the pattern's style and the site's own", async () => {
+      (getAll as jest.Mock).mockResolvedValue({
+        'github.com': {
+          css: 'p {}',
+          enabled: true,
+          readability: false,
+          modifiedTime: '',
+        },
+      });
+      (chrome.tabs.get as jest.Mock).mockResolvedValue({
+        id: TAB_ID,
+        url: 'https://github.com/',
+      });
+      styleResponse('a {}', PATTERN);
+
+      await startGalleryPreview(TAB_ID, style.id);
+
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
+        TAB_ID,
+        expect.objectContaining({ replacedUrls: [PATTERN, 'github.com'] }),
+        expect.any(Function)
+      );
+    });
+
+    it("installs under the pattern, apart from the user's own style for the site", async () => {
+      expect(await install('https://github.com/ankit')).toBe('Tokyo Night');
+      expect(installProfile).toHaveBeenCalledWith(
+        PATTERN,
+        expect.objectContaining({ name: 'Tokyo Night' })
+      );
+    });
+
+    it("turns off the site's own style once installed under the pattern", async () => {
+      (getAll as jest.Mock).mockResolvedValue({
+        'github.com': {
+          css: 'p {}',
+          enabled: true,
+          readability: false,
+          modifiedTime: '',
+        },
+      });
+
+      await install('https://github.com/ankit');
+
+      expect(disable).toHaveBeenCalledWith('github.com');
+    });
+
+    it("turns the site's own style back on when the install is undone", async () => {
+      const site = {
+        css: 'p {}',
+        enabled: true,
+        readability: false,
+        modifiedTime: '',
+      };
+
+      (getAll as jest.Mock).mockResolvedValue({ 'github.com': site });
+      (disable as jest.Mock).mockImplementationOnce(async () => {
+        (getAll as jest.Mock).mockResolvedValue({
+          'github.com': { ...site, enabled: false },
+        });
+      });
+
+      await install('https://github.com/ankit');
+      await undoGalleryInstall(TAB_ID);
+
+      expect(restoreStyles).toHaveBeenCalledWith({ 'github.com': site });
+    });
+
+    it('leaves a global style on once installed under the pattern', async () => {
+      (getAll as jest.Mock).mockResolvedValue({
+        '*': {
+          css: 'p {}',
+          enabled: true,
+          readability: false,
+          modifiedTime: '',
+        },
+      });
+
+      await install('https://github.com/ankit');
+
+      expect(disable).not.toHaveBeenCalled();
+    });
+
+    it('installs under the pattern from a page it leaves out', async () => {
+      expect(await install('https://github.com/settings')).toBe('Tokyo Night');
+      expect(installProfile).toHaveBeenCalledWith(PATTERN, expect.anything());
+    });
+  });
+
+  describe('installing a style installed or published here before', () => {
+    const LATEST_CSS = 'a { color: blue; }';
+    const LATEST_LISTING: GalleryListing = {
+      styleId: style.id,
+      slug: 'tokyo-night',
+      version: 2,
+      cssHash: hashCss(LATEST_CSS),
+      published: false,
+    };
+
+    /**
+     * Seeds github.com with one profile holding css and a gallery listing,
+     * galleryListing, previews the style and queues the gallery's answer to the
+     * install with its latest css.
+     */
+    const seed = async (css: string, galleryListing?: GalleryListing) => {
+      store['gallery-install-id'] = 'install-1';
+      (getAll as jest.Mock).mockResolvedValue({
+        'github.com': {
+          css,
+          enabled: true,
+          readability: false,
+          modifiedTime: '',
+          activeProfile: 'p0',
+          profiles: { p0: { name: 'Mine', galleryListing } },
+        },
+      });
+      styleResponse('a {}');
+      await startGalleryPreview(TAB_ID, style.id);
+      fetchMock.mockResponseOnce(
+        JSON.stringify({ ...style, name: 'Tokyo Night', css: LATEST_CSS })
+      );
+    };
+
+    const installedAt = (version: number, css: string): GalleryListing => ({
+      ...LATEST_LISTING,
+      version,
+      cssHash: hashCss(css),
+    });
+
+    it('switches back to an untouched install of the latest version', async () => {
+      await seed('a { color: red; }', installedAt(2, 'a { color: red; }'));
+
+      expect(await installGalleryPreview(TAB_ID)).toBe('Mine');
+      expect(reinstallProfile).toHaveBeenCalledWith('github.com', 'p0', {});
+      expect(disable).not.toHaveBeenCalled();
+      expect(installProfile).not.toHaveBeenCalled();
+    });
+
+    it('updates an untouched install of an older version in place', async () => {
+      await seed('a { color: red; }', installedAt(1, 'a { color: red; }'));
+
+      await installGalleryPreview(TAB_ID);
+
+      expect(reinstallProfile).toHaveBeenCalledWith('github.com', 'p0', {
+        css: LATEST_CSS,
+        galleryListing: LATEST_LISTING,
+      });
+    });
+
+    it.each([
+      ['the latest', 2],
+      ['an older', 1],
+    ])(
+      'adds a new profile beside an edited install of %s version, leaving it as it is',
+      async (_, version) => {
+        await seed(
+          'a { color: pink; }',
+          installedAt(version, 'a { color: red; }')
+        );
+
+        await installGalleryPreview(TAB_ID);
+
+        expect(reinstallProfile).not.toHaveBeenCalled();
+        expect(installProfile).toHaveBeenCalledWith('github.com', {
+          name: 'Tokyo Night',
+          css: LATEST_CSS,
+          galleryListing: LATEST_LISTING,
+        });
+      }
+    );
+
+    it('adds a new profile beside an edited copy of a style published from here', async () => {
+      await seed('a { color: pink; }', {
+        ...installedAt(1, 'a { color: red; }'),
+        published: true,
+      });
+
+      await installGalleryPreview(TAB_ID);
+
+      expect(reinstallProfile).not.toHaveBeenCalled();
+      expect(installProfile).toHaveBeenCalled();
+    });
+
+    it("installs anew when no profile has the style's listing", async () => {
+      await seed('a { color: pink; }');
+
+      await installGalleryPreview(TAB_ID);
+
+      expect(reinstallProfile).not.toHaveBeenCalled();
+      expect(installProfile).toHaveBeenCalled();
+    });
+  });
+
+  it('undoes an install, putting back only the styles it changed, and previews again', async () => {
+    const before = {
+      css: 'b {}',
+      enabled: true,
+      readability: false,
+      modifiedTime: '1',
+    };
+    const untouched = { ...before, css: 'c {}' };
+
+    store['gallery-install-id'] = 'install-1';
+    let current: StyleMap = { 'github.com': before, 'x.com': untouched };
+
+    (getAll as jest.Mock).mockImplementation(async () => current);
+    (installProfile as jest.Mock).mockImplementationOnce(async () => {
+      current = {
+        'github.com': { ...before, css: 'a {}' },
+        'gist.github.com': { ...before, css: 'a {}' },
+        'x.com': untouched,
+      };
+
+      return { name: 'Hacker Hearth', id: 'p2' };
+    });
+    styleResponse('a {}');
+    await startGalleryPreview(TAB_ID, style.id);
+    const preview = await getGalleryPreview(TAB_ID);
+    fetchMock.mockResponseOnce(JSON.stringify({ ...style, css: 'a {}' }));
+
+    await installGalleryPreview(TAB_ID);
+    await undoGalleryInstall(TAB_ID);
+
+    expect(restoreStyles).toHaveBeenCalledWith({
+      'github.com': before,
+      'gist.github.com': null,
+    });
+    expect(await getGalleryPreview(TAB_ID)).toEqual(preview);
+    await expect(undoGalleryInstall(TAB_ID)).rejects.toThrow();
+  });
+});

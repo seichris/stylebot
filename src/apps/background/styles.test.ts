@@ -1,0 +1,883 @@
+import 'jest-fetch-mock';
+import { hashCss } from '@stylebot/gallery';
+import { COMPILED_STYLES_VERSION } from '@stylebot/saved-styles';
+import type { StyleMap, StyleProfiles } from '@stylebot/types';
+
+jest.mock('./sync-scheduler', () => ({
+  scheduleSyncAfterEdit: jest.fn().mockResolvedValue(undefined),
+}));
+
+import {
+  set,
+  setAll,
+  enable,
+  disable,
+  toggleForPage,
+  move,
+  setReadability,
+  setActiveProfile,
+  setStyleOption,
+  createProfile,
+  installProfile,
+  reinstallProfile,
+  updateGalleryProfile,
+  setGalleryListing,
+  resetGalleryProfile,
+  removeStyleGalleryListings,
+  renameProfile,
+  deleteProfile,
+  deleteStyle,
+  getGoogleWebFontExists,
+  getGoogleFontFile,
+  ensureCompiledStyles,
+  holdWritesUntil,
+} from './styles';
+import { scheduleSyncAfterEdit } from './sync-scheduler';
+import * as compiledStylesModule from './compiled-styles';
+
+describe('set', () => {
+  let store: Record<string, unknown>;
+
+  beforeEach(() => {
+    jest.resetModules();
+
+    store = {
+      styles: {
+        'example.com': {
+          css: 'body { color: red; }',
+          readability: false,
+          enabled: false,
+          modifiedTime: 1,
+        },
+      },
+    };
+
+    global.chrome = {
+      storage: {
+        local: {
+          get: jest.fn(
+            (keys: string | Array<string>) =>
+              new Promise(resolve => {
+                // Simulate the read taking a tick, so a second write can start
+                // before the first one's read-modify-write finishes — mirroring
+                // rapid keystrokes in the code editor firing overlapping
+                // SetStyle messages. Deep-clone, since real chrome.storage.local
+                // returns a structured-clone copy, not a live reference.
+                const items: Record<string, unknown> = {};
+                for (const key of Array.isArray(keys) ? keys : [keys]) {
+                  if (store[key] !== undefined) {
+                    items[key] = JSON.parse(JSON.stringify(store[key]));
+                  }
+                }
+                setTimeout(() => resolve(items), 10);
+              })
+          ),
+          set: jest.fn(
+            (items: Record<string, unknown>) =>
+              new Promise<void>(resolve => {
+                setTimeout(() => {
+                  Object.assign(store, items);
+                  resolve();
+                }, 0);
+              })
+          ),
+        },
+      },
+    } as unknown as typeof chrome;
+  });
+
+  it('does not lose a concurrent edit to a different url', async () => {
+    const otherWrite = set('other.com', 'body { color: blue; }', false);
+    const enableWrite = enable('example.com');
+
+    await Promise.all([otherWrite, enableWrite]);
+
+    const styles = store.styles as Record<string, { enabled: boolean }>;
+    expect(styles['other.com']).toBeTruthy();
+    expect(styles['example.com'].enabled).toBe(true);
+  });
+
+  it('keeps Use !important off when a save leaves the setting out', async () => {
+    (store.styles as Record<string, { forceImportant?: boolean }>)[
+      'example.com'
+    ].forceImportant = false;
+
+    await set('example.com', 'body { color: blue; }', false);
+
+    const styles = store.styles as Record<string, { forceImportant?: boolean }>;
+    expect(styles['example.com'].forceImportant).toBe(false);
+  });
+
+  it('stores the setting a save passes, dropping the field when true', async () => {
+    await set('example.com', 'body { color: blue; }', false, false);
+    let styles = store.styles as Record<string, object>;
+    expect(styles['example.com']).toHaveProperty('forceImportant', false);
+
+    await set('example.com', 'body { color: blue; }', false, true);
+    styles = store.styles as Record<string, object>;
+    expect(styles['example.com']).not.toHaveProperty('forceImportant');
+  });
+
+  it('keeps fields it does not know about', async () => {
+    (store.styles as Record<string, Record<string, unknown>>)[
+      'example.com'
+    ].futureField = 'kept';
+
+    await set('example.com', 'body { color: blue; }', false);
+
+    const styles = store.styles as Record<string, object>;
+    expect(styles['example.com']).toHaveProperty('futureField', 'kept');
+  });
+});
+
+describe('style edits', () => {
+  type StoredStyle = {
+    css: string;
+    enabled: boolean;
+    readability: boolean;
+    modifiedTime: string;
+    profiles?: StyleProfiles;
+  };
+
+  let store: { styles: Record<string, StoredStyle> };
+  const stored = (url: string) => store.styles[url];
+  // Style writes only: each one also records a history entry, which is its
+  // own write to its own key.
+  const writes = () =>
+    (chrome.storage.local.set as jest.Mock).mock.calls.filter(
+      ([items]) => 'styles' in items
+    ).length;
+
+  beforeEach(() => {
+    jest.resetModules();
+
+    store = {
+      styles: {
+        'example.com': {
+          css: 'body { color: red; }',
+          readability: false,
+          enabled: true,
+          modifiedTime: '2024-01-01T00:00:00.000Z',
+        },
+      },
+    };
+
+    global.chrome = {
+      storage: {
+        local: {
+          get: jest.fn(async (keys: string | Array<string>) => {
+            const items: Record<string, unknown> = {};
+
+            (Array.isArray(keys) ? keys : [keys]).forEach(key => {
+              const held = store[key as 'styles'];
+
+              items[key] =
+                held === undefined
+                  ? undefined
+                  : JSON.parse(JSON.stringify(held));
+            });
+
+            return items;
+          }),
+          set: jest.fn(async (items: Record<string, unknown>) => {
+            Object.assign(store, items);
+          }),
+        },
+      },
+    } as unknown as typeof chrome;
+  });
+
+  // Sync merges by per-style modifiedTime, so a toggle that leaves it alone
+  // loses to any older edit of the same style on another device.
+  it('stamps modifiedTime when a style is disabled, enabled or moved', async () => {
+    await disable('example.com');
+    expect(stored('example.com').enabled).toBe(false);
+    expect(stored('example.com').modifiedTime).not.toBe(
+      '2024-01-01T00:00:00.000Z'
+    );
+
+    store.styles['example.com'].modifiedTime = '2024-01-01T00:00:00.000Z';
+    await enable('example.com');
+    expect(stored('example.com').modifiedTime).not.toBe(
+      '2024-01-01T00:00:00.000Z'
+    );
+
+    store.styles['example.com'].modifiedTime = '2024-01-01T00:00:00.000Z';
+    await move('example.com', 'moved.com');
+    expect(stored('example.com')).toBeUndefined();
+    expect(stored('moved.com').modifiedTime).not.toBe(
+      '2024-01-01T00:00:00.000Z'
+    );
+  });
+
+  it('skips the write when enabling or disabling changes nothing', async () => {
+    await enable('example.com');
+    await disable('missing.com');
+
+    expect(writes()).toBe(0);
+  });
+
+  it('flips the page style once per toggle, however quickly they come', async () => {
+    await Promise.all([
+      toggleForPage('https://example.com/a'),
+      toggleForPage('https://example.com/b'),
+      toggleForPage('https://example.com/c'),
+    ]);
+
+    expect(stored('example.com').enabled).toBe(false);
+    expect(writes()).toBe(3);
+  });
+
+  it('skips the toggle on a page without a style', async () => {
+    await toggleForPage('https://missing.com/');
+
+    expect(writes()).toBe(0);
+  });
+
+  it('skips the write when readability is already at the requested value', async () => {
+    await setReadability('example.com', false);
+    await setReadability('missing.com', false);
+
+    expect(writes()).toBe(0);
+    expect(stored('missing.com')).toBeUndefined();
+  });
+
+  it('creates a blank style when readability is turned on for a new url', async () => {
+    await setReadability('new.com', true);
+
+    expect(stored('new.com')).toMatchObject({ css: '', readability: true });
+    expect(writes()).toBe(1);
+  });
+
+  it('adds a profile in one write, keeping the existing css as the default', async () => {
+    const id = await createProfile('example.com', {
+      name: 'Dark',
+      activate: true,
+    });
+
+    expect(writes()).toBe(1);
+    expect(stored('example.com')).toMatchObject({
+      css: '',
+      activeProfile: id,
+      profiles: {
+        default: { name: '', css: 'body { color: red; }' },
+        [id]: { name: 'Dark' },
+      },
+    });
+  });
+
+  it('duplicates the css of the profile it copies', async () => {
+    const id = await createProfile('example.com', {
+      name: 'Copy',
+      sourceProfileId: 'default',
+      activate: false,
+    });
+
+    expect(stored('example.com')).toMatchObject({
+      css: 'body { color: red; }',
+      profiles: { [id]: { name: 'Copy', css: 'body { color: red; }' } },
+    });
+  });
+
+  it('switches, renames and deletes profiles', async () => {
+    const id = await createProfile('example.com', {
+      name: 'Dark',
+      activate: false,
+    });
+
+    const { modifiedTime } = stored('example.com');
+    await setActiveProfile('example.com', id);
+    expect(stored('example.com')).toMatchObject({
+      css: '',
+      activeProfile: id,
+      modifiedTime,
+    });
+
+    await renameProfile('example.com', id, 'Night');
+    expect(stored('example.com')).toMatchObject({
+      profiles: { [id]: { name: 'Night' } },
+    });
+
+    await deleteProfile('example.com', id);
+    expect(stored('example.com')).toMatchObject({
+      css: 'body { color: red; }',
+      activeProfile: 'default',
+      profiles: { default: { name: '' } },
+    });
+  });
+
+  it('skips the write when a profile change does nothing', async () => {
+    await setActiveProfile('example.com', 'default');
+    await setActiveProfile('example.com', 'missing');
+    await renameProfile('example.com', 'missing', 'x');
+    await deleteProfile('example.com', 'default');
+
+    expect(writes()).toBe(0);
+  });
+
+  it('keeps option values per profile, without stamping an edit', async () => {
+    (store.styles as StyleMap)['example.com'].css =
+      '/* ==Stylebot==\n@option scheme select [system, light, dark] system\n==/Stylebot== */';
+    const id = await createProfile('example.com', {
+      name: 'Dark',
+      sourceProfileId: 'default',
+      activate: false,
+    });
+    const { modifiedTime } = stored('example.com');
+
+    await setStyleOption('example.com', 'default', 'scheme', 'dark');
+    await setStyleOption('example.com', id, 'scheme', 'light');
+
+    expect(stored('example.com')).toMatchObject({
+      modifiedTime,
+      profileOptions: {
+        default: { scheme: 'dark' },
+        [id]: { scheme: 'light' },
+      },
+    });
+
+    const written = writes();
+    await setStyleOption('example.com', id, 'scheme', 'light');
+    await setStyleOption('example.com', 'missing', 'scheme', 'light');
+    await setStyleOption('other.com', 'default', 'scheme', 'light');
+    await setStyleOption('example.com', id, 'scheme', 'sepia');
+    await setStyleOption('example.com', id, 'accent', 'blue');
+    expect(writes()).toBe(written);
+
+    await deleteProfile('example.com', id);
+    expect(stored('example.com')).toHaveProperty('profileOptions', {
+      default: { scheme: 'dark' },
+    });
+  });
+
+  it('deletes a style with all its profiles, and skips the write for one that is gone', async () => {
+    await deleteStyle('example.com');
+    expect(stored('example.com')).toBeUndefined();
+
+    const written = writes();
+    await deleteStyle('example.com');
+    expect(writes()).toBe(written);
+  });
+
+  it('installs css as a new active profile, keeping the existing css and turning the style on', async () => {
+    store.styles['example.com'].enabled = false;
+
+    const profile = await installProfile('example.com', {
+      name: 'Dracula',
+      css: 'a { color: purple; }',
+    });
+
+    expect(profile.name).toBe('Dracula');
+    expect(stored('example.com').profiles?.[profile.id]).toMatchObject({
+      name: 'Dracula',
+    });
+    expect(writes()).toBe(1);
+    expect(stored('example.com')).toMatchObject({
+      css: 'a { color: purple; }',
+      enabled: true,
+      profiles: { default: { name: '', css: 'body { color: red; }' } },
+    });
+  });
+
+  it('switches back to an installed profile rather than adding the same one twice', async () => {
+    const css = 'a { color: purple; }';
+    const first = await installProfile('example.com', { name: 'Dracula', css });
+    await setActiveProfile('example.com', 'default');
+
+    expect(
+      await installProfile('example.com', { name: 'Dracula', css })
+    ).toEqual(first);
+    expect(stored('example.com')).toMatchObject({ css });
+    expect(Object.keys(stored('example.com').profiles ?? {})).toHaveLength(2);
+
+    const before = writes();
+    await installProfile('example.com', { name: 'Dracula', css });
+    expect(writes()).toBe(before);
+  });
+
+  it('installs different css under a free name when the name is taken', async () => {
+    await installProfile('example.com', { name: 'Dracula', css: 'a {}' });
+
+    expect(
+      (await installProfile('example.com', { name: 'Dracula', css: 'b {}' }))
+        .name
+    ).toBe('Dracula 2');
+  });
+
+  it('switches back to an installed profile, replacing its css when given, and turns the style on', async () => {
+    const { id } = await installProfile('example.com', {
+      name: 'Dracula',
+      css: 'a {}',
+    });
+    await setActiveProfile('example.com', 'default');
+    await disable('example.com');
+
+    expect(await reinstallProfile('example.com', id, { css: 'b {}' })).toBe(
+      'Dracula'
+    );
+    expect(stored('example.com')).toMatchObject({
+      css: 'b {}',
+      activeProfile: id,
+      enabled: true,
+    });
+
+    const before = writes();
+    expect(await reinstallProfile('example.com', id)).toBe('Dracula');
+    expect(writes()).toBe(before);
+  });
+
+  it('reinstalls nothing when the profile is gone', async () => {
+    const before = writes();
+
+    expect(
+      await reinstallProfile('example.com', 'missing', { css: 'b {}' })
+    ).toBeNull();
+    expect(writes()).toBe(before);
+  });
+
+  describe('gallery listings', () => {
+    const listing = (styleId = 7) => ({
+      styleId,
+      slug: `style-${styleId}`,
+      version: 1,
+      cssHash: 'abc',
+      published: false,
+    });
+
+    it('keeps the listing of a profile installed from the gallery, even when its name and css match another', async () => {
+      const css = 'a { color: purple; }';
+      const first = await installProfile('example.com', { name: 'Night', css });
+      const listed = await installProfile('example.com', {
+        name: 'Night',
+        css,
+        galleryListing: listing(),
+      });
+
+      expect(listed).toMatchObject({ name: 'Night 2' });
+      expect(listed.id).not.toBe(first.id);
+      expect(stored('example.com').profiles?.[listed.id]).toEqual({
+        name: 'Night 2',
+        galleryListing: listing(),
+        createdAt: expect.any(String),
+      });
+    });
+
+    it('replaces an empty default profile with the one installed from the gallery', async () => {
+      const { id } = await installProfile('new.com', {
+        name: 'Night',
+        css: 'a {}',
+        galleryListing: listing(),
+      });
+
+      expect(stored('new.com')).toMatchObject({
+        css: 'a {}',
+        activeProfile: id,
+        profiles: { [id]: { name: 'Night', galleryListing: listing() } },
+      });
+      expect(Object.keys(stored('new.com').profiles ?? {})).toEqual([id]);
+
+      store.styles['blank.com'] = {
+        css: ' \n',
+        readability: false,
+        enabled: true,
+        modifiedTime: '1',
+      };
+      await installProfile('blank.com', {
+        name: 'Night',
+        css: 'a {}',
+        galleryListing: listing(),
+      });
+      expect(stored('blank.com').profiles?.default).toBeUndefined();
+    });
+
+    it('keeps a default profile with css when installing from the gallery', async () => {
+      await installProfile('example.com', {
+        name: 'Night',
+        css: 'a {}',
+        galleryListing: listing(),
+      });
+
+      expect(stored('example.com').profiles?.default).toEqual({
+        name: '',
+        css: 'body { color: red; }',
+      });
+    });
+
+    it('updates the listing of a profile it reinstalls', async () => {
+      const { id } = await installProfile('example.com', {
+        name: 'Night',
+        css: 'a {}',
+        galleryListing: listing(),
+      });
+      const newer = { ...listing(), version: 2 };
+
+      await reinstallProfile('example.com', id, {
+        css: 'b {}',
+        galleryListing: newer,
+      });
+
+      expect(stored('example.com')).toMatchObject({
+        css: 'b {}',
+        profiles: { [id]: { name: 'Night', galleryListing: newer } },
+      });
+    });
+
+    it('updates an unedited install in place, leaving the active profile and whether the style is on', async () => {
+      const installed = { ...listing(), cssHash: hashCss('a {}') };
+      const newer = { ...installed, version: 2, cssHash: hashCss('b {}') };
+      const { id } = await installProfile('example.com', {
+        name: 'Night',
+        css: 'a {}',
+        galleryListing: installed,
+      });
+      await setActiveProfile('example.com', 'default');
+      await disable('example.com');
+
+      await updateGalleryProfile('example.com', id, 'b {}', newer);
+
+      expect(stored('example.com')).toMatchObject({
+        css: 'body { color: red; }',
+        activeProfile: 'default',
+        enabled: false,
+        profiles: { [id]: { css: 'b {}', galleryListing: newer } },
+      });
+    });
+
+    it('leaves an edited install, and one already at the version, as they are', async () => {
+      const installed = { ...listing(), cssHash: hashCss('a {}') };
+      const newer = { ...installed, version: 2, cssHash: hashCss('b {}') };
+      const { id } = await installProfile('example.com', {
+        name: 'Night',
+        css: 'a {}',
+        galleryListing: installed,
+      });
+      await set('example.com', 'a { color: red; }', false);
+
+      const before = writes();
+      await updateGalleryProfile('example.com', id, 'b {}', newer);
+      await updateGalleryProfile('example.com', id, 'b {}', installed);
+      expect(writes()).toBe(before);
+      expect(stored('example.com').css).toBe('a { color: red; }');
+    });
+
+    it('sets the listing a profile was published as', async () => {
+      await setGalleryListing('example.com', 'default', listing(8));
+      expect(stored('example.com').profiles?.default).toEqual({
+        name: '',
+        galleryListing: listing(8),
+      });
+
+      const before = writes();
+      await setGalleryListing('example.com', 'default', listing(8));
+      expect(writes()).toBe(before);
+    });
+
+    it('resets an edited profile to a gallery version, keeping it active and off', async () => {
+      const { id } = await installProfile('example.com', {
+        name: 'Night',
+        css: 'b {}',
+        galleryListing: listing(),
+      });
+      await setActiveProfile('example.com', 'default');
+      const newer = { ...listing(), version: 2, cssHash: hashCss('c {}') };
+
+      await resetGalleryProfile('example.com', id, 'c {}', newer);
+
+      expect(stored('example.com')).toMatchObject({
+        activeProfile: 'default',
+        profiles: { [id]: { css: 'c {}', galleryListing: newer } },
+      });
+    });
+
+    it('drops an unpublished style’s listing from every profile, keeping other styles’', async () => {
+      const { id } = await installProfile('example.com', {
+        name: 'Night',
+        css: 'a {}',
+        galleryListing: listing(),
+      });
+      await setGalleryListing('example.com', 'default', listing(8));
+
+      await removeStyleGalleryListings(8);
+
+      expect(
+        stored('example.com').profiles?.default?.galleryListing
+      ).toBeUndefined();
+      expect(stored('example.com').profiles?.[id]?.galleryListing).toEqual(
+        listing()
+      );
+    });
+  });
+
+  it('creates the style when installing for a url with none', async () => {
+    await installProfile('new.com', { name: 'Dark', css: 'a {}' });
+
+    expect(stored('new.com')).toMatchObject({ css: 'a {}', enabled: true });
+  });
+
+  it('saves css to the profile it names, and keeps a style whose active profile is blank', async () => {
+    const id = await createProfile('example.com', {
+      name: 'Dark',
+      activate: false,
+    });
+
+    await set('example.com', 'a {}', false, undefined, id);
+    expect(stored('example.com')).toMatchObject({
+      css: 'body { color: red; }',
+      profiles: { [id]: { css: 'a {}' } },
+    });
+
+    await set('example.com', '', false);
+    expect(stored('example.com')).toMatchObject({ css: '' });
+
+    await set('example.com', '', false, undefined, id);
+    expect(stored('example.com')).toBeUndefined();
+  });
+
+  it('never adds profile fields to a style that has none', async () => {
+    await set('example.com', 'a {}', false);
+    await disable('example.com');
+    await enable('example.com');
+    await setReadability('example.com', true);
+    await move('example.com', 'moved.com');
+
+    expect(stored('moved.com')).not.toHaveProperty('profiles');
+    expect(stored('moved.com')).not.toHaveProperty('activeProfile');
+  });
+
+  it('still deletes a style without profiles when its css is cleared', async () => {
+    await set('example.com', '', false);
+
+    expect(stored('example.com')).toBeUndefined();
+  });
+
+  it('drops a save to a profile that no longer exists', async () => {
+    await set('example.com', 'a {}', false, undefined, 'gone');
+
+    expect(writes()).toBe(0);
+  });
+
+  it('lines up a sync after an edit, but not after a write sync itself made', async () => {
+    (scheduleSyncAfterEdit as jest.Mock).mockClear();
+
+    await disable('example.com');
+    await enable('missing.com');
+    expect(scheduleSyncAfterEdit).toBeCalledTimes(1);
+
+    await setAll({}, { fromSync: true });
+    expect(scheduleSyncAfterEdit).toBeCalledTimes(1);
+
+    await setAll({});
+    expect(scheduleSyncAfterEdit).toBeCalledTimes(2);
+  });
+});
+
+const fontUrl = 'https://fonts.googleapis.com/css2?family=Muli&display=swap';
+
+describe('getGoogleWebFontExists', () => {
+  it('is true when the google web font API serves the family', async () => {
+    fetchMock.mockResponse(() => Promise.resolve({ status: 200 }));
+
+    await expect(getGoogleWebFontExists(fontUrl)).resolves.toBe(true);
+  });
+
+  it('is false when the google web font API returns 400', async () => {
+    fetchMock.mockResponse(() => Promise.resolve({ status: 400 }));
+
+    await expect(getGoogleWebFontExists(fontUrl)).resolves.toBe(false);
+  });
+
+  it('is false when the request fails', async () => {
+    fetchMock.mockResponse(() => Promise.reject(new Error('offline')));
+
+    await expect(getGoogleWebFontExists(fontUrl)).resolves.toBe(false);
+  });
+});
+
+const fontFileUrl = 'https://fonts.gstatic.com/s/muli/v1/a.woff2';
+
+describe('getGoogleFontFile', () => {
+  it('resolves to the file as base64', async () => {
+    fetchMock.mockResponse(() => Promise.resolve({ body: 'wOF2' }));
+
+    await expect(getGoogleFontFile(fontFileUrl)).resolves.toBe(btoa('wOF2'));
+  });
+
+  it('fetches nothing outside Google Fonts', async () => {
+    fetchMock.mockClear();
+
+    await expect(
+      getGoogleFontFile('https://example.com/a.woff2')
+    ).resolves.toBe('');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('is empty when the request fails', async () => {
+    fetchMock.mockResponse(() => Promise.resolve({ status: 404 }));
+    await expect(getGoogleFontFile(fontFileUrl)).resolves.toBe('');
+
+    fetchMock.mockResponse(() => Promise.reject(new Error('offline')));
+    await expect(getGoogleFontFile(fontFileUrl)).resolves.toBe('');
+  });
+});
+
+describe('compiled styles', () => {
+  let store: Record<string, unknown>;
+
+  const style = { css: 'a { color: red; }', enabled: true, readability: false };
+
+  beforeEach(() => {
+    store = {};
+
+    global.chrome = {
+      storage: {
+        local: {
+          get: jest.fn(async (keys: string | Array<string>) => {
+            const items: Record<string, unknown> = {};
+            for (const key of Array.isArray(keys) ? keys : [keys]) {
+              if (store[key] !== undefined) {
+                items[key] = JSON.parse(JSON.stringify(store[key]));
+              }
+            }
+            return items;
+          }),
+          set: jest.fn(async (items: Record<string, unknown>) => {
+            Object.assign(store, items);
+          }),
+        },
+      },
+    } as unknown as typeof chrome;
+  });
+
+  it('stores the compiled copy with every write, stamped with its revision', async () => {
+    await setAll({ 'a.com': { ...style, modifiedTime: 't' } });
+
+    const revision = (store['styles-metadata'] as { modifiedTime: string })
+      .modifiedTime;
+
+    expect(store['styles-compiled']).toEqual({
+      version: COMPILED_STYLES_VERSION,
+      revision,
+      styles: {
+        'a.com': {
+          css: 'a { color: red !important; }',
+          importUrls: [],
+          enabled: true,
+          readability: false,
+        },
+      },
+    });
+  });
+
+  it('reuses the stored compiled copy on a write only when it matches the styles being replaced', async () => {
+    const compileStyles = jest.spyOn(compiledStylesModule, 'compileStyles');
+
+    await setAll({ 'a.com': { ...style, modifiedTime: 't' } });
+    await setAll({ 'a.com': { ...style, enabled: false, modifiedTime: 't' } });
+
+    expect(compileStyles.mock.calls[1][2]).toEqual({
+      styles: { 'a.com': { ...style, modifiedTime: 't' } },
+      compiled: expect.objectContaining({ 'a.com': expect.anything() }),
+    });
+
+    store['styles-metadata'] = { modifiedTime: 'written-elsewhere' };
+    await setAll({ 'a.com': { ...style, modifiedTime: 't' } });
+
+    expect(compileStyles.mock.calls[2][2]).toBeUndefined();
+    compileStyles.mockRestore();
+  });
+
+  it('builds the compiled copy when none is stored yet', async () => {
+    store.styles = { 'a.com': { ...style, modifiedTime: 't' } };
+    store['styles-metadata'] = { modifiedTime: 'rev-1' };
+
+    const compiled = await ensureCompiledStyles();
+
+    expect(compiled.revision).toBe('rev-1');
+    expect(compiled.styles['a.com'].css).toBe('a { color: red !important; }');
+    expect(store['styles-compiled']).toEqual(compiled);
+  });
+
+  it('keeps a stored copy that matches the current styles', async () => {
+    const stored = {
+      version: COMPILED_STYLES_VERSION,
+      revision: 'rev-1',
+      styles: {},
+    };
+    store.styles = { 'a.com': { ...style, modifiedTime: 't' } };
+    store['styles-metadata'] = { modifiedTime: 'rev-1' };
+    store['styles-compiled'] = stored;
+
+    expect(await ensureCompiledStyles()).toEqual(stored);
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'built from other styles',
+      { version: COMPILED_STYLES_VERSION, revision: 'rev-0', styles: {} },
+    ],
+    [
+      'from an older compiler',
+      { version: COMPILED_STYLES_VERSION - 1, revision: 'rev-1', styles: {} },
+    ],
+  ])('rebuilds a stored copy %s', async (_label, stored) => {
+    store.styles = { 'a.com': { ...style, modifiedTime: 't' } };
+    store['styles-metadata'] = { modifiedTime: 'rev-1' };
+    store['styles-compiled'] = stored;
+
+    const compiled = await ensureCompiledStyles();
+
+    expect(compiled).toMatchObject({
+      version: COMPILED_STYLES_VERSION,
+      revision: 'rev-1',
+    });
+    expect(Object.keys(compiled.styles)).toEqual(['a.com']);
+  });
+});
+
+describe('holdWritesUntil', () => {
+  it('reads styles for a write only once the hold is released', async () => {
+    const store: Record<string, unknown> = {
+      styles: { 'example.com': { css: 'a {}', enabled: false } },
+    };
+
+    global.chrome = {
+      storage: {
+        local: {
+          get: jest.fn(async (keys: string | Array<string>) =>
+            JSON.parse(
+              JSON.stringify(
+                Object.fromEntries([keys].flat().map(key => [key, store[key]]))
+              )
+            )
+          ),
+          set: jest.fn(async (items: Record<string, unknown>) => {
+            Object.assign(store, items);
+          }),
+          remove: jest.fn(async () => undefined),
+        },
+      },
+    } as unknown as typeof chrome;
+
+    let release = (): void => undefined;
+    holdWritesUntil(new Promise<void>(resolve => (release = resolve)));
+
+    const write = enable('example.com');
+    await new Promise(resolve => setTimeout(resolve, 10));
+    expect(chrome.storage.local.get).not.toBeCalled();
+
+    // What a migration repairs while the write waits.
+    store.styles = {
+      'example.com': { css: 'a {}', enabled: false },
+      'repaired.com': { css: 'b {}', enabled: true },
+    };
+    release();
+    await write;
+
+    expect(store.styles).toMatchObject({
+      'example.com': { enabled: true },
+      'repaired.com': { css: 'b {}' },
+    });
+    expect(chrome.storage.local.get).toBeCalled();
+  });
+});

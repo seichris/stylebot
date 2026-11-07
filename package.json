@@ -1,7 +1,7 @@
 {
   "name": "stylebot",
-  "version": "3.1.4",
-  "description": "Change the appearance of the web instantly",
+  "version": "4.3.0",
+  "description": "Don't like how a website looks? Change it.",
   "homepage": "https://github.com/ankit/stylebot#readme",
   "bugs": {
     "url": "https://github.com/ankit/stylebot/issues"
@@ -13,115 +13,209 @@
   "license": "MIT",
   "author": "Ankit Ahuja",
   "scripts": {
-    "build": "cross-env NODE_ENV=production webpack --hide-modules",
-    "build:firefox": "cross-env NODE_ENV=production BROWSER=firefox webpack --hide-modules",
-    "watch": "cross-env NODE_ENV=development webpack --hide-modules --watch",
-    "watch:firefox": "cross-env NODE_ENV=development BROWSER=firefox webpack --hide-modules --watch",
-    "start:firefox": "web-ext run --source-dir ./firefox-dist/",
-    "lint": "eslint --ext .js,.ts,.vue src",
+    "build": "cross-env NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=production webpack --hide-modules",
+    "build:preview": "cross-env NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=production STYLEBOT_PREVIEW=1 webpack --hide-modules",
+    "build:firefox": "cross-env NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=production BROWSER=firefox webpack --hide-modules",
+    "package:firefox": "node scripts/firefox/package.mjs",
+    "build:safari": "cross-env NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=production BROWSER=safari webpack --hide-modules",
+    "stylebot": "node tools/cli/lib/cli.mjs",
+    "watch": "cross-env NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=development webpack --hide-modules --watch",
+    "watch:firefox": "cross-env NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=development BROWSER=firefox webpack --hide-modules --watch",
+    "watch:safari": "cross-env NODE_OPTIONS=--openssl-legacy-provider NODE_ENV=development BROWSER=safari webpack --hide-modules --watch",
+    "start:firefox": "node scripts/firefox/start.mjs",
+    "start:safari": "node scripts/safari/start.mjs",
+    "start:safari-ios": "node scripts/safari/start-ios.mjs",
+    "clean:safari": "node scripts/safari/clean.mjs",
+    "upload:chrome": "node scripts/chrome/upload.mjs",
+    "upload:edge": "node scripts/edge/upload.mjs",
+    "upload:firefox": "node scripts/firefox/upload.mjs",
+    "upload:safari": "node scripts/safari/upload.mjs",
+    "upload:safari-ios": "node scripts/safari/upload.mjs --ios",
+    "upload:safari-listing": "node scripts/safari/upload-listing.mjs",
+    "start:chrome": "node scripts/launch-chrome.mjs",
+    "start:edge": "cross-env STYLEBOT_BROWSER=edge node scripts/launch-chrome.mjs",
+    "dev:chrome": "yarn install && (yarn watch & cross-env STYLEBOT_FRESH_BUILD=1 yarn start:chrome; kill 0)",
+    "dev:chrome:locale": "node scripts/dev-chrome-locale.mjs",
+    "dev:chrome:headless": "yarn install && (yarn watch & cross-env STYLEBOT_FRESH_BUILD=1 STYLEBOT_HEADLESS=1 yarn start:chrome; kill 0)",
+    "dev:edge": "yarn install && (yarn watch & cross-env STYLEBOT_FRESH_BUILD=1 yarn start:edge; kill 0)",
+    "dev:firefox": "yarn install && (yarn watch:firefox & node scripts/firefox/wait-for-build.mjs && yarn start:firefox; kill 0)",
+    "dev:safari": "yarn install && (yarn watch:safari & node scripts/safari/start.mjs --watch; kill 0)",
+    "preview:chrome": "yarn build:preview && cross-env STYLEBOT_EXTENSION_DIR=preview-dist yarn start:chrome",
+    "preview:edge": "cross-env STYLEBOT_STORE=edge yarn build:preview && cross-env STYLEBOT_EXTENSION_DIR=preview-dist yarn start:edge",
+    "preview:firefox": "yarn build:firefox && yarn start:firefox",
+    "preview:safari": "yarn build:safari && yarn start:safari",
+    "preview:safari-ios": "yarn build:safari && yarn start:safari-ios",
+    "lint": "eslint .",
     "lint:fix": "yarn lint --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p .storybook",
     "test": "jest",
+    "validate-locales": "node scripts/validate-locales.mjs",
+    "update-google-fonts": "node scripts/update-google-fonts.mjs",
     "test:coverage": "jest --coverage",
+    "test:storybook": "node scripts/storybook-test.mjs",
+    "e2e": "node scripts/e2e.mjs",
+    "capture:store": "node scripts/capture/store.mjs",
+    "store:safari-text": "node scripts/safari/store-text.mjs",
+    "capture:gallery": "node scripts/capture/gallery.mjs",
+    "capture:manual": "node scripts/capture/manual.mjs",
+    "capture:cli-mode": "node scripts/capture/cli-mode.mjs",
+    "storybook": "storybook dev -p 6006 --no-open",
+    "eval:styling": "node evals/styling/run.mjs",
+    "build-storybook": "storybook build --quiet",
     "postinstall": "patch-package"
   },
   "jest": {
+    "roots": [
+      "<rootDir>/src",
+      "<rootDir>/tools"
+    ],
     "moduleFileExtensions": [
       "js",
+      "mjs",
       "ts",
       "json",
       "vue"
     ],
     "setupFiles": [
-      "./setupJest.js"
+      "<rootDir>/jest/setup.js"
     ],
-    "testRegex": "(/__tests__/.*|(\\.|/)(test|spec))\\.(jsx?|tsx?)$",
+    "testRegex": "\\.(test|spec)\\.(m?jsx?|tsx?)$",
     "transform": {
-      ".*\\.(vue)$": "vue-jest",
+      ".*\\.(vue)$": "@vue/vue2-jest",
       "^.+\\.ts$": "ts-jest",
-      "^.+\\.js$": "babel-jest"
+      "^.+\\.js$": "babel-jest",
+      "^.+\\.mjs$": [
+        "babel-jest",
+        {
+          "plugins": [
+            "@babel/plugin-transform-modules-commonjs"
+          ]
+        }
+      ]
     },
     "moduleNameMapper": {
-      "^@stylebot/(.*)$": "<rootDir>/src/$1/index",
-      "\\.(css|scss)$": "<rootDir>/__mocks__/styleMock.js"
-    }
+      "^@stylebot/inject-css$": "<rootDir>/src/apps/content/index",
+      "^@stylebot/(.*)$": [
+        "<rootDir>/src/core/$1/index",
+        "<rootDir>/src/features/$1/index",
+        "<rootDir>/src/ui/$1/index",
+        "<rootDir>/src/apps/$1/index"
+      ],
+      "\\.(css|scss)$": "<rootDir>/jest/style-mock.js"
+    },
+    "testEnvironment": "jsdom"
   },
   "lint-staged": {
-    "src/**/*.{js,ts,vue}": [
-      "yarn lint:fix"
+    "*.{js,mjs,ts,vue}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,scss,css,md,yml,yaml,html}": [
+      "prettier --write"
     ]
+  },
+  "prettier": {
+    "trailingComma": "es5",
+    "tabWidth": 2,
+    "semi": true,
+    "singleQuote": true,
+    "bracketSpacing": true,
+    "arrowParens": "avoid",
+    "useTabs": false,
+    "printWidth": 80,
+    "htmlWhitespaceSensitivity": "ignore"
   },
   "husky": {
     "hooks": {
       "pre-commit": "lint-staged"
     }
   },
+  "resolutions": {
+    "@testing-library/jest-dom": "6.9.1"
+  },
+  "dependencies": {
+    "date-fns": "^2.16.1",
+    "defuddle": "^0.19.3",
+    "monaco-editor": "^0.56.0",
+    "postcss": "^7.0.32",
+    "requirejs": "^2.3.6",
+    "tinycolor2": "^1.4.1",
+    "vue": "^2.6.11",
+    "vue-router": "^3.6.5",
+    "vuex": "^3.5.1"
+  },
   "devDependencies": {
     "@babel/core": "^7.10.1",
-    "@babel/plugin-proposal-optional-chaining": "^7.10.1",
-    "@babel/preset-env": "^7.10.1",
+    "@babel/plugin-transform-modules-commonjs": "^7.27.1",
+    "@eslint/js": "^9",
+    "@playwright/test": "1.63.0",
+    "@storybook/addon-controls": "~7.6.20",
+    "@storybook/addon-interactions": "~7.6.20",
+    "@storybook/addon-toolbars": "~7.6.20",
+    "@storybook/addon-viewport": "~7.6.20",
+    "@storybook/test": "~7.6.20",
+    "@storybook/test-runner": "~0.16.0",
+    "@storybook/vue": "~7.6.20",
+    "@storybook/vue-vite": "~7.6.20",
     "@types/chrome": "^0.0.193",
     "@types/dedent": "^0.7.0",
-    "@types/jest": "^26.0.4",
-    "@types/lodash": "^4.14.157",
+    "@types/jest": "^29",
+    "@types/node": "^20",
     "@types/tinycolor2": "^1.4.2",
-    "@typescript-eslint/eslint-plugin": "^3.6.0",
-    "@typescript-eslint/parser": "^3.6.0",
-    "@vue/eslint-config-prettier": "^6.0.0",
-    "@vue/eslint-config-typescript": "^5.0.2",
     "@vue/test-utils": "^1.0.3",
-    "babel-core": "^7.0.0-bridge.0",
-    "babel-jest": "^26.1.0",
-    "bootstrap": "^4.5.0",
-    "bootstrap-vue": "^2.15.0",
+    "@vue/vue2-jest": "^29",
+    "babel-jest": "^29",
+    "commander": "^14.0.3",
     "copy-webpack-plugin": "^6.0.1",
     "cross-env": "^7.0.2",
     "css-loader": "^3.5.3",
     "cssnano": "^4.1.10",
-    "date-fns": "^2.16.1",
     "dedent": "^0.7.0",
-    "deepmerge": "^4.2.2",
     "ejs": "^3.1.3",
-    "eslint": "^7.4.0",
-    "eslint-config-prettier": "^6.11.0",
-    "eslint-plugin-prettier": "^3.1.4",
-    "eslint-plugin-vue": "^6.2.2",
-    "hotkeys-js": "^3.8.1",
+    "esbuild": "0.18.20",
+    "eslint": "^9",
+    "eslint-config-prettier": "^10",
+    "eslint-plugin-jsdoc": "^50",
+    "eslint-plugin-vue": "^10",
+    "globals": "^16",
+    "http-server": "^14.1.1",
     "husky": "^4.2.5",
-    "jest": "^26.1.0",
-    "jest-cli": "^26.1.0",
-    "jest-environment-jsdom": "^26.1.0",
+    "jest": "^29",
+    "jest-environment-jsdom": "^29",
     "jest-fetch-mock": "^3.0.3",
+    "js-yaml": "^3.13.1",
     "lint-staged": "^10.5.4",
-    "lodash": "^4.17.19",
     "mini-css-extract-plugin": "^0.9.0",
-    "monaco-editor": "^0.20.0",
     "patch-package": "^6.2.2",
-    "postcss": "^7.0.32",
+    "playwright": "1.63.0",
     "postcss-loader": "^3.0.0",
     "postcss-rem-to-pixel": "^4.1.2",
     "postinstall-postinstall": "^2.1.0",
-    "prettier": "^2.0.5",
-    "prettier-eslint": "^11.0.0",
+    "prettier": "^2.8.8",
     "progress-bar-webpack-plugin": "^2.1.0",
-    "readability": "mozilla/readability#master",
-    "requirejs": "^2.3.6",
     "sass": "^1.26.9",
     "sass-loader": "^8.0.2",
+    "sharp": "^0.35.4",
+    "storybook": "~7.6.20",
     "terser-webpack-plugin": "^3.0.7",
-    "tinycolor2": "^1.4.1",
-    "ts-jest": "^26.1.1",
-    "ts-loader": "^8.0.1",
-    "typescript": "^3.9.7",
-    "vue": "^2.6.11",
-    "vue-draggable-resizable": "^2.3.0",
-    "vue-eslint-parser": "^7.1.0",
-    "vue-jest": "^3.0.6",
+    "ts-jest": "^29",
+    "ts-loader": "^8.4.0",
+    "typescript": "~5.9.2",
+    "typescript-eslint": "^8",
+    "vite": "~4.5.14",
+    "vite-plugin-vue2": "2.0.3",
+    "vue-eslint-parser": "^10",
     "vue-loader": "^15.9.2",
-    "vue-swatches": "^2.1.1",
     "vue-template-compiler": "^2.6.11",
-    "vuex": "^3.5.1",
     "web-ext": "^5.4.1",
     "webpack": "^4.43.0",
     "webpack-cli": "^3.3.11"
-  }
+  },
+  "sideEffects": [
+    "*.css",
+    "*.scss",
+    "*.vue"
+  ]
 }

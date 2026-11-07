@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
 const fs = require('fs');
 const ejs = require('ejs');
 const path = require('path');
@@ -11,22 +10,122 @@ const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const ProgressBarPlugin = require('progress-bar-webpack-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
 
-const getOutputPath = () =>
-  process.env.BROWSER
+const { buildManifest, supportsCLI } = require('./scripts/lib/build-manifest');
+const { parseLocaleConfig } = require('./scripts/lib/parse-locale-config');
+
+/**
+ * The English messages, whose placeholder order every locale is numbered by.
+ */
+const englishMessages = () =>
+  parseLocaleConfig(
+    fs.readFileSync(
+      path.join(__dirname, 'src/assets/_locales/en.config'),
+      'utf8'
+    )
+  ).messages;
+const { SRC_DIR, packageDirs } = require('./scripts/lib/src-packages');
+
+const isPreview = process.env.STYLEBOT_PREVIEW === '1';
+const isCLISupported = supportsCLI(process.env.BROWSER);
+// Lets app code check for the CLI, and minifying drops it where it's false.
+const cliDefinitions = {
+  'process.env.STYLEBOT_CLI': JSON.stringify(String(isCLISupported)),
+};
+// A development build can point the styles gallery at another API, such as a
+// local Worker, and at another site, such as the gallery's dev server.
+const devOnly = name =>
+  JSON.stringify(
+    process.env.NODE_ENV === 'production' ? '' : process.env[name] ?? ''
+  );
+const galleryDefinitions = {
+  'process.env.STYLEBOT_GALLERY_API_URL': devOnly('STYLEBOT_GALLERY_API_URL'),
+  'process.env.STYLEBOT_GALLERY_SITE_URL': devOnly('STYLEBOT_GALLERY_SITE_URL'),
+};
+
+// Drive sign-in can't exchange codes or refresh tokens without it, so a
+// release built without it would ship with sign-in broken. CI builds only test.
+if (!process.env.STYLEBOT_GOOGLE_CLIENT_SECRET) {
+  const message =
+    'STYLEBOT_GOOGLE_CLIENT_SECRET is not set; Google Drive sign-in will fail in this build.';
+
+  if (process.env.NODE_ENV === 'production' && !process.env.CI) {
+    throw new Error(message);
+  }
+  console.warn(`Warning: ${message}`);
+}
+
+// The build's UTC time as YYYYMMDDHHMM, so each Safari build gets a higher number.
+const safariBuildNumber = new Date()
+  .toISOString()
+  .slice(0, 16)
+  .replace(/\D/g, '');
+
+const getOutputPath = () => {
+  if (isPreview) {
+    return `${__dirname}/preview-dist`;
+  }
+
+  return process.env.BROWSER
     ? `${__dirname}/${process.env.BROWSER}-dist`
     : `${__dirname}/dist`;
+};
+
+// Webpack 4 never empties the output folder, so files an older build wrote
+// would end up in a store zip.
+if (process.env.NODE_ENV === 'production') {
+  fs.rmSync(getOutputPath(), { recursive: true, force: true });
+}
+
+// Writes a marker once every compiler has built successfully, so tools like
+// scripts/launch-chrome.mjs never see it before manifest.json exists.
+const compilersDone = {};
+
+class WriteBuildMarkerPlugin {
+  constructor(compilerKey) {
+    this.compilerKey = compilerKey;
+  }
+
+  apply(compiler) {
+    compilersDone[this.compilerKey] = false;
+
+    compiler.hooks.done.tap('WriteBuildMarkerPlugin', stats => {
+      if (stats.hasErrors()) {
+        return;
+      }
+
+      compilersDone[this.compilerKey] = true;
+
+      if (!Object.values(compilersDone).every(Boolean)) {
+        return;
+      }
+
+      fs.writeFileSync(
+        path.join(getOutputPath(), '.build-complete'),
+        String(Date.now())
+      );
+    });
+  }
+}
 
 const config = {
   stats: 'errors-only',
   mode: process.env.NODE_ENV,
   context: `${__dirname}/src`,
-  devtool: 'inline-source-map',
+  // Inline sourcemaps in production bloat every content script (see #890).
+  devtool: process.env.NODE_ENV === 'production' ? false : 'inline-source-map',
 
   optimization: {
+    // On in development too (webpack enables it only in production), so a
+    // side-effect-only import missing from package.json breaks in dev:chrome.
+    sideEffects: true,
     minimize: process.env.NODE_ENV === 'production',
     minimizer: [
       new TerserPlugin({
         parallel: true,
+        // The monaco-editor package under min/vs is copied in pre-minified
+        // (see CopyPlugin below) and uses syntax newer than this project's
+        // pinned Terser can parse, so re-minifying it just breaks the build.
+        exclude: /monaco-editor\/iframe\/node_modules\/monaco-editor/,
         terserOptions: {
           ecma: 6,
           output: {
@@ -45,30 +144,12 @@ const config = {
 
   resolve: {
     extensions: ['.ts', '.js', '.vue'],
-    alias: {
-      '@stylebot/css': path.resolve(__dirname, './src/css/index'),
-      '@stylebot/i18n': path.resolve(__dirname, './src/i18n/index'),
-      '@stylebot/sync': path.resolve(__dirname, './src/sync/index'),
-      '@stylebot/types': path.resolve(__dirname, './src/types/index'),
-      '@stylebot/utils': path.resolve(__dirname, './src/utils/index'),
-      '@stylebot/dark-mode': path.resolve(__dirname, './src/dark-mode/index'),
-      '@stylebot/settings': path.resolve(__dirname, './src/settings/index'),
-
-      '@stylebot/readability': path.resolve(
-        __dirname,
-        './src/readability/index'
-      ),
-
-      '@stylebot/highlighter': path.resolve(
-        __dirname,
-        './src/highlighter/index'
-      ),
-
-      '@stylebot/monaco-editor': path.resolve(
-        __dirname,
-        './src/monaco-editor/index'
-      ),
-    },
+    alias: Object.fromEntries(
+      Object.entries(packageDirs()).map(([name, dir]) => [
+        `@stylebot/${name}`,
+        path.join(SRC_DIR, dir, 'index'),
+      ])
+    ),
   },
 
   module: {
@@ -76,6 +157,10 @@ const config = {
       {
         test: /\.vue$/,
         loader: 'vue-loader',
+      },
+      {
+        resourceQuery: /type=style/,
+        sideEffects: true,
       },
       {
         test: /\.ts$/,
@@ -107,7 +192,15 @@ const config = {
               ],
             },
           },
-          'sass-loader',
+          {
+            loader: 'sass-loader',
+            options: {
+              prependData: `@import "mixins";`,
+              sassOptions: {
+                includePaths: [path.resolve(__dirname, 'src/ui/scss')],
+              },
+            },
+          },
         ],
       },
     ],
@@ -115,6 +208,7 @@ const config = {
 
   plugins: [
     new ProgressBarPlugin(),
+    new WriteBuildMarkerPlugin('client'),
     new VueLoaderPlugin(),
     new MiniCssExtractPlugin({
       filename: '[name].css',
@@ -122,96 +216,128 @@ const config = {
     new CopyPlugin({
       patterns: [
         {
-          from: 'extension/img',
-          to: 'img',
+          from: 'assets/icon/*.png',
+          to: 'img/[name].[ext]',
         },
         {
-          from: 'options/index.html',
-          to: 'options/index.html',
+          from: 'assets/fonts',
+          to: 'fonts',
+        },
+        {
+          from: 'features/google-fonts/fonts.json',
+          to: 'google-fonts/fonts.json',
+        },
+        {
+          from: 'apps/options/index.html',
+          to: 'options.html',
           transform: transformHtml,
         },
         {
-          from: 'popup/index.html',
+          from: 'apps/popup/index.html',
           to: 'popup/index.html',
           transform: transformHtml,
         },
         {
-          from: 'monaco-editor/iframe/index.html',
+          from: 'apps/options/google-sign-in/index.html',
+          to: 'google-sign-in/index.html',
+          transform: transformHtml,
+        },
+        {
+          from: 'apps/editor/window/index.html',
+          to: 'editor-window/index.html',
+          transform: transformHtml,
+        },
+        {
+          from: 'apps/editor/window/appearance-init.js',
+          to: 'editor-window/appearance-init.js',
+        },
+        {
+          from: 'apps/side-panel-default/index.html',
+          to: 'side-panel-default/index.html',
+        },
+        {
+          from: 'apps/side-panel-default/index.js',
+          to: 'side-panel-default/index.js',
+        },
+        {
+          from: 'apps/monaco-iframe/index.html',
           to: 'monaco-editor/iframe/index.html',
           transform: transformHtml,
         },
         {
+          from: 'apps/monaco-iframe/options-index.html',
+          to: 'monaco-editor/iframe/options-index.html',
+          transform: transformHtml,
+        },
+        {
+          from: 'apps/monaco-iframe/theme-init.js',
+          to: 'monaco-editor/iframe/theme-init.js',
+        },
+        {
+          from: 'apps/monaco-iframe/editor.css',
+          to: 'monaco-editor/iframe/editor.css',
+        },
+        {
           from: '../node_modules/monaco-editor/min/**/*',
           to: 'monaco-editor/iframe/monaco-editor/',
+          // The editor only edits CSS. AMO's linter can't parse the TypeScript
+          // worker. Ignore patterns only match as absolute paths here.
+          globOptions: {
+            ignore: [
+              'language/{html,json,typescript}/**',
+              'assets/{html,json,ts}.worker-*.js',
+            ].map(pattern =>
+              path.join(__dirname, 'node_modules/monaco-editor/min/vs', pattern)
+            ),
+          },
         },
         {
-          from: '../node_modules/requirejs/**/*',
-          to: 'monaco-editor/iframe/requirejs',
+          from: '../node_modules/requirejs/require.js',
+          to: 'monaco-editor/iframe/node_modules/requirejs/require.js',
         },
         {
-          from: '_locales/*.config',
+          from: 'assets/_locales/*.config',
           to: '_locales/[name]/messages.json',
 
           transform: raw => {
-            const content = raw.toString().replace(/^#.*?$/gm, '');
-            const messages = {};
-            const regex = /@([a-z0-9_]+)/gi;
-
-            let match;
-
-            while ((match = regex.exec(content))) {
-              const messageName = match[1];
-              const messageStart = match.index + match[0].length;
-
-              let messageEnd = content.indexOf('@', messageStart);
-
-              if (messageEnd < 0) {
-                messageEnd = content.length;
-              }
-
-              const message = content
-                .substring(messageStart, messageEnd)
-                .trim();
-
-              messages[messageName] = {
-                message,
-              };
-
-              const placeholderMatches = [...message.matchAll(/\$([^$]+)\$/g)];
-
-              if (placeholderMatches.length > 0) {
-                messages[messageName].placeholders = {};
-
-                placeholderMatches.forEach(m => {
-                  messages[messageName].placeholders[m[1]] = {
-                    content: '$1',
-                  };
-                });
-              }
-            }
+            const { messages } = parseLocaleConfig(
+              raw.toString(),
+              englishMessages()
+            );
 
             return JSON.stringify(messages, null, 2);
           },
         },
         {
-          from: 'extension/manifest.json',
+          from: 'assets/manifest/manifest.json',
           to: 'manifest.json',
 
-          transform: content => {
-            let jsonContent = JSON.parse(content);
-
-            if (process.env.BROWSER === 'firefox') {
-              const firefoxJsonContent = JSON.parse(
-                fs.readFileSync(
-                  `${__dirname}/src/extension/manifest-firefox.json`
-                )
-              );
-              jsonContent = { ...jsonContent, ...firefoxJsonContent };
-            }
-
-            return JSON.stringify(jsonContent, null, 2);
-          },
+          transform: () =>
+            JSON.stringify(
+              buildManifest({
+                browser: process.env.BROWSER,
+                nodeEnv: process.env.NODE_ENV,
+                preview: isPreview,
+                store: process.env.STYLEBOT_STORE,
+              }),
+              null,
+              2
+            ),
         },
+        // The Safari Xcode project reads its app and extension version from
+        // here. App Store Connect needs a new build number for every upload.
+        ...(process.env.BROWSER === 'safari'
+          ? [
+              {
+                from: 'assets/manifest/manifest.json',
+                to: 'Version.xcconfig',
+                transform: content => {
+                  const { version } = JSON.parse(content);
+                  return `MARKETING_VERSION = ${version}\nCURRENT_PROJECT_VERSION = ${safariBuildNumber}\n`;
+                },
+              },
+            ]
+          : []),
       ],
     }),
   ],
@@ -236,11 +362,18 @@ function transformHtml(content) {
 const backgroundPageConfig = {
   ...config,
   entry: {
-    'background/index': './background/index.ts',
+    'background/index': './apps/background/index.ts',
   },
   plugins: [
+    new WriteBuildMarkerPlugin('background'),
     new webpack.DefinePlugin({
       global: 'this',
+      ...cliDefinitions,
+      ...galleryDefinitions,
+      // Google sign-in's Desktop client secret, kept out of the repo.
+      'process.env.STYLEBOT_GOOGLE_CLIENT_SECRET': JSON.stringify(
+        process.env.STYLEBOT_GOOGLE_CLIENT_SECRET ?? ''
+      ),
     }),
   ],
 };
@@ -248,14 +381,36 @@ const backgroundPageConfig = {
 const clientConfig = {
   ...config,
   entry: {
-    'sync/index': './sync/index.ts',
-    'popup/index': './popup/index.ts',
-    'editor/index': './editor/index.ts',
-    'options/index': './options/index.ts',
-    'inject-css/index': './inject-css/index.ts',
-    'monaco-editor/iframe/index': './monaco-editor/iframe/index.ts',
-    'readability/index': './readability/index.ts',
+    'popup/index': './apps/popup/index.ts',
+    'editor/index': './apps/editor/content-script.ts',
+    'editor/app': './apps/editor/app.ts',
+    options: './apps/options/index.ts',
+    'google-sign-in/index': './apps/options/google-sign-in/index.ts',
+    'editor-window/index': './apps/editor/window/index.ts',
+    'inject-css/index': './apps/content/content-script.ts',
+    'site-bridge/index': './apps/site-bridge/content-script.ts',
+    'gallery-preview/index': './apps/gallery-preview/index.ts',
+    'monaco-editor/iframe/index': './apps/monaco-iframe/index.ts',
+    'monaco-editor/iframe/options-index':
+      './apps/monaco-iframe/options-index.ts',
+    'readability/reader': './apps/reader/reader.ts',
+    // The CLI's page inspector and CLI mode's bar, loaded on demand.
+    ...(isCLISupported && {
+      'cli-inspector/index': './apps/cli-inspector/index.ts',
+      'cli-mode/index': './apps/cli-mode/index.ts',
+    }),
   },
+  // Webpack's `global` shim falls back to `new Function` in the bundles loaded
+  // with import(), which a strict page CSP blocks and reports as an issue.
+  node: { global: false },
+  plugins: [
+    ...config.plugins,
+    new webpack.DefinePlugin({
+      global: 'globalThis',
+      ...cliDefinitions,
+      ...galleryDefinitions,
+    }),
+  ],
 };
 
 module.exports = [backgroundPageConfig, clientConfig];

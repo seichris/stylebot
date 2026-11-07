@@ -1,3 +1,120 @@
+## Version 4.3.0 (November 2026)
+
+- Styles can offer their own options, picked from the popup, declared with UserCSS `@var select` and `@var checkbox` (#1261)
+
+## Version 4.2.0 (November 2026)
+
+- CLI mode: connect a tab to your coding agent, mark areas of the page and write notes, and see each change it makes with an undo (#1254, #1255, #1256)
+- CLI: pick a browser when Stylebot runs in several (#1252)
+- CLI: edit one rule, append rules, diff and grep a style, and report only what `css set` changed
+- CLI: screenshot one element or region, and force hover and focus states
+- Set up the Stylebot skill in Codex, Copilot, Cursor and other coding agents (#1250)
+- Fix Gallery links being lost on synced styles, or on styles hidden or unpublished in the Gallery (#1251)
+
+## Version 4.1.0 (October 2026)
+
+- Gallery: find, preview and install styles for the site you're on from the popup, and publish your own to gallery.stylebot.dev
+- Styles installed from the Gallery stay up to date until you edit them
+- Styles can offer a light/dark mode switch in the popup
+- Create, rename and delete profiles from the popup
+- Add a font weight control to the editor's Basic tab (#1241)
+- Code editor: folding and sticky scroll (#1236)
+- `stylebot` CLI: read and set a style's options
+- Fix signing in to the wrong Google account for sync (#1244)
+- Fix the page's text styles leaking into Stylebot's panels
+- Fix smaller issues in the editor and Options (#1222, #1239)
+
+## Version 4.0.5 (October 2026)
+
+- Fix Vivaldi opening the side panel on its own after installing or updating Stylebot
+- Show the rating prompt as a quieter card under Edit style in the popup
+
+## Version 4.0.4 (October 2026)
+
+- Make Stylebot usable in Arc (#1212)
+- Vivaldi: no longer open the side panel after installing or updating, and hide the Side panel option (#1215)
+- Keep the options page's style editor open after saving, save it with Ctrl+S / ⌘S, and only enable Save when there are changes (#1207, #1209)
+- Stop syncing every time the popup opens; Stylebot still syncs in the background, and Sync now syncs on demand (#1213)
+- Fix "A listener indicated an asynchronous response…" errors showing up in page consoles (#1214)
+
+## Version 4.0.3 (October 2026)
+
+- Open the editor docked in the page on the right by default, instead of in the side panel
+- Style images, videos and text files opened in their own tab (#1202)
+- Fix the inspector not picking elements while editing in Code
+- Fix styles sometimes staying on in open tabs after being turned off
+- Fix the toolbar icon warning about sync when Google Drive was unreachable or rate-limited (#1199)
+- Keep Drive sign-in working longer on Chrome, Edge and Firefox
+- Sync when the popup opens without showing a spinner
+- Drop the style count and reader badges from the toolbar icon
+- Center the selector in the inspector's card
+- Make the browser faster after an update and on pages with many styles (#1200, #1203, #1204)
+
+## Version 4.0.2 (October 2026)
+
+- Remove Chat; to restyle pages with AI, use the `stylebot` command line with a coding agent like Claude Code (#1190)
+- Hide the inspect highlight when the pointer leaves the page, and stop inspecting when the editor's Options menu opens
+- Fix shortcut labels in the options page's Basics being too bright in dark mode
+
+## Version 4.0.1 (October 2026)
+
+- Make Chat optional: it stays hidden until you turn it on in the options page's Basics, and stays on if you already use it (#1183)
+- Redesign the options page's Basics, adding the editor's position and setup for the `stylebot` command line (#1187)
+- Open the editor docked in the page in Vivaldi, which can't show it in the side panel (#1185)
+- Fix row menus being cut off in the options page's Styles list (#1188)
+- Make the extension smaller to download
+
+## Version 4.0.0 (October 2026)
+
+- Redesign the editor, with dark mode, grouped Basic controls that show the page's own values, color palettes and an eyedropper, hover previews for colors and fonts, in-place editing of any other property, and undo/redo (#1109, #1108, #1103, #1101, #1158, #1055, #1124, #916)
+- Generate better selectors that keep working when a site updates, with alternatives to choose from (#949, #1102, #1110, #1165, #1168, #1178, #1179)
+- Add profiles, to keep several looks for a site and switch between them from the editor, the popup or the options page (#1123, #1125, #1130, #1134)
+- Open the editor in Chrome and Edge's side panel, or pop it out into its own window (#993, #994, #996)
+- Add Chat: describe a look, or pick a suggested one, and Stylebot writes the CSS, with your own Claude, OpenAI or Gemini key (#1073, #1074, #1075, #1076, #1143, #1174, #1176)
+- Add the `stylebot` command line, so coding agents like Claude Code can restyle pages in your browser
+- Add version history, to restore any earlier version of a style (#1020)
+- Make Google Drive sync more robust: edits from different computers are merged, and sync runs on its own every 30 minutes and after you edit (#975, #976, #977, #1156, #1160)
+- Apply styles inside shadow DOM, so they work on sites built with web components
+- Redesign the options page's Styles, style editor, Basics and version history pages, and review a backup before importing it (#964, #1135)
+- Move Stylebot's shortcuts into the browser's shortcut settings; in Chrome and Edge, shortcuts you changed are back to their defaults (#1117)
+- Install styles from the stylebot.dev gallery as new profiles
+- Load pages faster by injecting precompiled styles and loading the editor and reader only when needed (#1028, #1041, #1026, #1042)
+- Fix Google Fonts on pages with a strict content security policy, and stop web fonts flashing while editing (#1119, #1166, #1167)
+- Support native CSS nesting (#1010)
+- Add Vietnamese and Indonesian, and revise every other translation
+- Update the Stylebot icon and launch a new stylebot.dev (#1045, #1031)
+
+## Version 3.2.4 (September 2026)
+
+- Fix CSS autocomplete and color swatches not working in the code editor (#921)
+- Fix Readability being unable to be turned off on non-article pages (#915)
+- Fix Readability toggle in the popup not working with multiple windows open (#913)
+
+## Version 3.2.3 (September 2026)
+
+- Fix injected CSS losing !important cascade priority (#896)
+
+## Version 3.2.2 (September 2026)
+
+- Redesign the options page with dark mode support and drop bootstrap-vue (#873)
+- Fix unclickable top/bottom edges on the popup's main style toggle (#881)
+- Reduce extension size by disabling inline source maps in production builds (#892)
+
+## Version 3.2.1 (September 2026)
+
+- Fix Readability toggle silently setting Magic as the global default mode (#877)
+
+## Version 3.2.0 (September 2026)
+
+- Fix flash of unstyled content on page load and in the CSS editor (#833, #834, #841, #842)
+- Overhaul Readability mode: switch the article-extraction engine to Defuddle for better page cleanup, plus a customizable theme and font, an inline settings dock, an animated loading experience, a keyboard shortcut, and localized menus (#854, #857, #855, #866, #870, #852)
+- Fix Readability blank page, flashing, and mid-load/hydrating-page toggle bugs (#848, #850)
+- Redesign the popup UI with dark mode support, a direct settings button, and fully clickable toggle rows (#867, #876, #845)
+- Fix false syntax errors in the CSS editor by upgrading Monaco (#838)
+- Fix CSS selector escaping and `@import` handling bugs (#821, #835)
+- Wrap long URLs in the styles overview (#837)
+- Revise zh-TW translations (#793)
+
 ## Version 3.1.4 (May 2024)
 
 - Chrome and Edge Only release

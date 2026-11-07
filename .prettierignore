@@ -1,0 +1,22 @@
+dist
+firefox-dist
+preview-dist
+node_modules
+coverage
+test-results
+playwright-report
+storybook-static
+junit.xml
+patches
+yarn.lock
+CHANGELOG.md
+
+# Prompt content — the manual line wrapping there is deliberate.
+.agents
+.claude
+
+# Chrome profile created by yarn dev:chrome.
+.chrome-dev-profile*
+.edge-dev-profile*
+# A page saved as Wikipedia served it, for the demo video
+store/video/wiki-ikigai.html

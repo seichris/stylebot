@@ -1,0 +1,83 @@
+<template>
+  <div
+    class="popup-row"
+    :class="{ button, hover, disabled }"
+    :role="button ? 'button' : undefined"
+    :tabindex="button && !disabled ? 0 : undefined"
+    @click="onClick"
+    @keydown="onKeydown"
+  >
+    <slot />
+  </div>
+</template>
+
+<script lang="ts">
+import Vue from 'vue';
+import { onEnterOrSpace, forwardClickToInput } from '../utils';
+
+export default Vue.extend({
+  name: 'PopupRow',
+
+  props: {
+    // The row itself is the sole clickable/focusable target (no nested control).
+    button: Boolean,
+    // CSS-only hover/rounded treatment for rows that wrap their own focusable
+    // control (e.g. a SToggleSwitch) — no extra role/tabindex/click-forwarding.
+    hover: Boolean,
+    disabled: Boolean,
+  },
+
+  methods: {
+    onClick(event: MouseEvent): void {
+      if (this.disabled) {
+        return;
+      }
+
+      if (this.hover) {
+        forwardClickToInput(event, this.$el);
+        return;
+      }
+
+      this.$emit('click', event);
+    },
+
+    onKeydown(event: KeyboardEvent): void {
+      if (!this.button || this.disabled) {
+        return;
+      }
+
+      onEnterOrSpace(event, () => this.$emit('click', event));
+    },
+  },
+});
+</script>
+
+<style lang="scss" scoped>
+.popup-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+
+  &.button:not(.disabled),
+  &.hover:not(.disabled) {
+    cursor: pointer;
+
+    @include hover-capable {
+      &:hover {
+        background: var(--hover-tint);
+      }
+    }
+  }
+
+  &.button:not(.disabled) {
+    @include focus-ring;
+  }
+
+  &.disabled {
+    cursor: default;
+    color: var(--text-muted);
+  }
+}
+</style>

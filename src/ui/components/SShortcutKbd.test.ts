@@ -1,0 +1,63 @@
+import { mount } from '@vue/test-utils';
+
+jest.mock('./utils/format-shortcut', () => ({
+  formatShortcut: jest.fn(),
+}));
+
+import { formatShortcut } from './utils/format-shortcut';
+import SShortcutKbd from './SShortcutKbd.vue';
+
+describe('SShortcutKbd.vue', () => {
+  it('renders one <kbd> per part with the joiner between them', () => {
+    (formatShortcut as jest.Mock).mockReturnValue({
+      parts: [{ text: 'Alt' }, { text: 'Shift' }, { text: 'R' }],
+      joiner: '+',
+    });
+
+    const wrapper = mount(SShortcutKbd, {
+      propsData: { value: 'alt+shift+r' },
+    });
+    const kbds = wrapper.findAll('kbd');
+
+    expect(kbds.length).toBe(3);
+    expect(kbds.at(0).text()).toBe('Alt');
+    expect(kbds.at(1).text()).toBe('Shift');
+    expect(kbds.at(2).text()).toBe('R');
+    expect(wrapper.findAll('.joiner').length).toBe(2);
+  });
+
+  it('renders empty separators when the joiner is empty', () => {
+    (formatShortcut as jest.Mock).mockReturnValue({
+      parts: [
+        { text: '⌥', icon: 'option' },
+        { text: '⇧', icon: 'shift' },
+        { text: 'R' },
+      ],
+      joiner: '',
+    });
+
+    const wrapper = mount(SShortcutKbd, {
+      propsData: { value: 'alt+shift+r' },
+    });
+
+    expect(wrapper.findAll('kbd').length).toBe(3);
+    wrapper.findAll('.joiner').wrappers.forEach(joiner => {
+      expect(joiner.text()).toBe('');
+    });
+  });
+
+  it('renders an icon instead of text for a part that has one', () => {
+    (formatShortcut as jest.Mock).mockReturnValue({
+      parts: [{ text: '⌥', icon: 'option' }, { text: 'R' }],
+      joiner: '',
+    });
+
+    const wrapper = mount(SShortcutKbd, { propsData: { value: 'alt+r' } });
+    const kbds = wrapper.findAll('kbd');
+
+    expect(kbds.at(0).find('svg').exists()).toBe(true);
+    expect(kbds.at(0).text()).toBe('');
+    expect(kbds.at(1).find('svg').exists()).toBe(false);
+    expect(kbds.at(1).text()).toBe('R');
+  });
+});

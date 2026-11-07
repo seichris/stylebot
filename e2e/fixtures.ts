@@ -1,0 +1,366 @@
+import {
+  test as base,
+  type BrowserContext,
+  type Page,
+  type TestInfo,
+  type WorkerInfo,
+} from '@playwright/test';
+import fs from 'node:fs';
+import type http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import { ChromiumEngine } from './chromium/engine';
+import type { Engine, Extension, Popup } from './engine';
+
+export type { Extension, Popup, PopupLocator } from './engine';
+import { FirefoxEngine } from './firefox/engine';
+
+// Set by scripts/e2e.mjs (`yarn e2e --firefox`; `--edge` is handled inside chromium/).
+const engine: Engine =
+  process.env.STYLEBOT_BROWSER === 'firefox'
+    ? new FirefoxEngine()
+    : new ChromiumEngine();
+
+const DIST_PATH = path.resolve(__dirname, '..', engine.distDir);
+
+// How long a fresh launch waits for the extension's onInstalled welcome tab.
+const HELP_TAB_TIMEOUT_MS = 15_000;
+
+// Launching a browser and installing the extension is the slowest thing a
+// worker does; it gets its own budget rather than the first test's 30s.
+const LAUNCH_TIMEOUT_MS = 60_000;
+
+// --ui mode force-manages tracing (a live `use.trace` flag) on every context,
+// including ours — fighting it for control throws, so skip ours when detected.
+function isLiveTraceMode(use: { trace?: unknown }): boolean {
+  return (
+    typeof use.trace === 'object' &&
+    use.trace !== null &&
+    (use.trace as { live?: boolean }).live === true
+  );
+}
+
+// Tracing is a debugging aid only, never a functional requirement — best-effort
+// on top of the skip above, for other external trace modes it doesn't catch.
+async function safeTracing(op: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await op();
+    return true;
+  } catch {
+    // Ignored — see comment above.
+    return false;
+  }
+}
+
+// The extension's browser now outlives each test (see the worker-scoped `browserPool`
+// fixture below), so it can keep a local test server's connection open in its keep-alive
+// pool — plain server.close() then hangs until that connection times out. Use this in
+// afterAll instead.
+export async function closeServer(server: http.Server): Promise<void> {
+  const closed = new Promise<void>(resolve => server.close(() => resolve()));
+  server.closeAllConnections();
+  await closed;
+}
+
+/*
+ * Optional permissions the suite's extension holds from the start, as users
+ * of releases that required them keep them. editor-sidepanel.spec.ts covers
+ * a fresh install granting the side panel.
+ */
+const HELD_OPTIONAL_PERMISSIONS = ['sidePanel'];
+
+/**
+ * Loads a copy of the build that requires the held optional permissions,
+ * then the build's own manifest over it as an update, which keeps them.
+ */
+async function loadExtensionHoldingPermissions(
+  context: BrowserContext,
+  userDataDir: string
+): Promise<Extension> {
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(DIST_PATH, 'manifest.json'), 'utf8')
+  );
+  const optional: Array<string> = manifest.optional_permissions ?? [];
+  const held = optional.filter(name =>
+    HELD_OPTIONAL_PERMISSIONS.includes(name)
+  );
+
+  if (!held.length) {
+    return engine.loadExtension(context, DIST_PATH);
+  }
+
+  const dir = path.join(userDataDir, 'extension');
+  const manifestFile = path.join(dir, 'manifest.json');
+  fs.cpSync(DIST_PATH, dir, { recursive: true });
+  fs.writeFileSync(
+    manifestFile,
+    JSON.stringify({
+      ...manifest,
+      permissions: [...manifest.permissions, ...held],
+      optional_permissions: optional.filter(name => !held.includes(name)),
+    })
+  );
+  const holding = await engine.loadExtension(context, dir);
+  await holding.evaluate(() => undefined);
+
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+  // Only Chromium builds hold optional permissions. The first copy's worker
+  // may still be listed for a while, so this waits for the new one.
+  const started = context.waitForEvent('serviceworker');
+  const extension = await engine.loadExtension(context, dir);
+  await started;
+  return extension;
+}
+
+type Instance = {
+  context: BrowserContext;
+  userDataDir: string;
+  extension: Extension;
+};
+
+// One browser+extension instance per worker, reused across every test file that worker
+// runs — get() relaunches it on demand if the shared Chrome process died mid-suite.
+class BrowserPool {
+  private current: Instance | null = null;
+  private launching: Promise<Instance> | null = null;
+  private readonly instances: Array<Instance> = [];
+
+  constructor(
+    private readonly workerInfo: WorkerInfo,
+    private readonly liveTraceMode: boolean
+  ) {}
+
+  async get(): Promise<Instance> {
+    if (this.current?.context.browser()?.isConnected()) {
+      return this.current;
+    }
+
+    // Concurrent fixtures (context, extension) can both notice a dead browser in
+    // the same tick — share one relaunch instead of racing two. finally, not just
+    // the success .then(), so a failed launch doesn't wedge every future get().
+    this.launching ??= this.launch()
+      .then(instance => {
+        this.current = instance;
+        return instance;
+      })
+      .finally(() => {
+        this.launching = null;
+      });
+
+    return this.launching;
+  }
+
+  private async launch(): Promise<Instance> {
+    if (!fs.existsSync(DIST_PATH)) {
+      throw new Error(
+        `No build found at ${DIST_PATH} — run \`yarn build\` before the e2e suite (\`yarn e2e\` does this for you).`
+      );
+    }
+
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stylebot-e2e-'));
+
+    const launchOptions = {
+      // --headed/--debug don't reach our manual browser launch, but they do flip this.
+      headless: this.workerInfo.project.use.headless ?? true,
+      viewport: null,
+      // null leaves prefers-color-scheme unemulated, matching the real OS setting.
+      colorScheme: null,
+    };
+
+    const context = await engine.launch(userDataDir, launchOptions);
+
+    // The extension opens this on fresh install, stealing tab focus.
+    const helpTabClosed = new Promise<void>(resolve => {
+      const closeHelpTab = (p: Page) => {
+        if (/^https:\/\/stylebot\.dev\/welcome/.test(p.url())) {
+          // Resolve only once it's gone: a context.route() installed while the
+          // tab is still closing fails with a target-closed error.
+          p.close()
+            .catch(() => {})
+            .then(resolve);
+        }
+      };
+      context.on('page', p => {
+        closeHelpTab(p);
+        p.once('framenavigated', () => closeHelpTab(p));
+      });
+    });
+
+    // Our custom context bypasses Playwright's default trace/video wiring, so start it
+    // manually; the context fixture below saves one chunk per test via startChunk/stopChunk.
+    // Screenshots are the expensive part of continuous per-worker tracing; DOM
+    // snapshots alone are cheap and still enough to debug a failure from.
+    if (!this.liveTraceMode) {
+      await safeTracing(() =>
+        context.tracing.start({ screenshots: false, snapshots: true })
+      );
+    }
+
+    const extension = await loadExtensionHoldingPermissions(
+      context,
+      userDataDir
+    );
+
+    // onInstalled fires once the background first spins up, which under
+    // parallel-worker load can be after the first test has already opened its
+    // page and popup — the help tab then becomes the active tab and the popup
+    // acts on it instead. Let it land and close before any test starts. Bounded,
+    // since an engine that never surfaces it must not stall the launch.
+    await Promise.race([
+      helpTabClosed,
+      new Promise<void>(resolve =>
+        setTimeout(resolve, HELP_TAB_TIMEOUT_MS).unref()
+      ),
+    ]);
+
+    const instance: Instance = { context, userDataDir, extension };
+    this.instances.push(instance);
+    return instance;
+  }
+
+  // Tears down every instance this worker ever launched, not just the current one —
+  // a mid-suite relaunch leaves earlier instances orphaned otherwise.
+  async closeAll(): Promise<void> {
+    await Promise.all(
+      this.instances.map(async ({ context, userDataDir, extension }) => {
+        extension.close();
+        if (context.browser()?.isConnected()) {
+          if (!this.liveTraceMode) {
+            await safeTracing(() => context.tracing.stop());
+          }
+          await context.close().catch(() => {});
+        }
+        fs.rmSync(userDataDir, { recursive: true, force: true });
+      })
+    );
+  }
+}
+
+export const test = base.extend<
+  {
+    // Overrides Playwright's built-in test-scoped `context` fixture: it wraps the
+    // worker-scoped browser pool's current context with per-test trace/tab/storage isolation.
+    context: BrowserContext;
+    engine: Engine;
+    extension: Extension;
+    openPopup: () => Promise<Popup>;
+  },
+  {
+    browserPool: BrowserPool;
+  }
+>({
+  browserPool: [
+    async ({}, use, workerInfo) => {
+      const pool = new BrowserPool(
+        workerInfo,
+        isLiveTraceMode(workerInfo.project.use)
+      );
+      // Launch here, under this fixture's own timeout, so a cold start on a
+      // loaded CI runner doesn't eat into whichever test happens to run first.
+      await pool.get();
+      await use(pool);
+      await pool.closeAll();
+    },
+    { scope: 'worker', timeout: LAUNCH_TIMEOUT_MS },
+  ],
+
+  // Test-scoped so it always matches whatever context the same test's `context`
+  // fixture resolved to, including right after a mid-suite relaunch.
+  extension: async ({ browserPool }, use) => {
+    const { extension } = await browserPool.get();
+    await use(extension);
+  },
+
+  // Saves a per-test trace chunk and resets tabs/storage after so state can't leak
+  // into the next test.
+  context: async ({ browserPool }, use, testInfo: TestInfo) => {
+    const { context } = await browserPool.get();
+    const liveTraceMode = isLiveTraceMode(testInfo.project.use);
+
+    if (!liveTraceMode) {
+      await safeTracing(() => context.tracing.startChunk());
+    }
+
+    const pagesBefore = new Set(context.pages());
+
+    await use(context);
+
+    // Retain-on-failure: saving screenshots/snapshots for every passing test doesn't
+    // scale as the suite grows, so only keep the trace when there's something to debug.
+    if (!liveTraceMode) {
+      if (testInfo.status !== testInfo.expectedStatus) {
+        const tracePath = testInfo.outputPath('trace.zip');
+        const saved = await safeTracing(() =>
+          context.tracing.stopChunk({ path: tracePath })
+        );
+        if (saved) {
+          // Named 'trace' so the HTML reporter shows its built-in "View trace" button.
+          await testInfo.attach('trace', {
+            path: tracePath,
+            contentType: 'application/zip',
+          });
+        }
+      } else {
+        await safeTracing(() => context.tracing.stopChunk());
+      }
+    }
+
+    // The browser may have died during the test itself — nothing left to clean up on it.
+    if (!context.browser()?.isConnected()) {
+      return;
+    }
+
+    // Edge keeps a tab's side panel open after the tab closes, and shows it,
+    // still bound to the closed tab, when the next test opens one.
+    const { extension } = await browserPool.get();
+    if (engine.hasSidePanel && extension.isRunning()) {
+      await extension.evaluate(async () => {
+        const panels = await chrome.runtime.getContexts({
+          contextTypes: ['SIDE_PANEL' as chrome.runtime.ContextType],
+        });
+        await Promise.all(
+          panels.map(panel =>
+            chrome.sidePanel
+              .setOptions({
+                tabId: Number(
+                  new URL(panel.documentUrl ?? '').searchParams.get('tabId')
+                ),
+                enabled: false,
+              })
+              .catch(() => undefined)
+          )
+        );
+      });
+    }
+
+    await Promise.all(
+      context
+        .pages()
+        .filter(p => !pagesBefore.has(p))
+        .map(p => p.close().catch(() => {}))
+    );
+    // Routes are context-wide, so without this every spec's stubs would pile
+    // up in the shared context for the rest of the worker's life.
+    await context.unrouteAll({ behavior: 'ignoreErrors' });
+    await context.clearCookies();
+
+    // An idle-terminated background has nothing left to clear, and waiting for it
+    // to come back would stall teardown.
+    if (extension.isRunning()) {
+      await extension.evaluate(() => chrome.storage.local.clear());
+    }
+  },
+
+  // For the rare spec that must know what the engine can observe.
+  engine: async ({}, use) => {
+    await use(engine);
+  },
+
+  openPopup: async ({ browserPool }, use) => {
+    const { context, extension } = await browserPool.get();
+
+    await use(() => engine.openPopup(context, extension));
+  },
+});
+
+export const expect = test.expect;

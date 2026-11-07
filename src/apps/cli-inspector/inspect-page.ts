@@ -1,0 +1,104 @@
+import { getFragileSelector } from '@stylebot/css';
+import {
+  checkStyle,
+  countMatches,
+  getComputedStyles,
+  getPageOutline,
+  getPageRulesCss,
+  getPageSignals,
+  getPageVariablesCss,
+  startStyleCheck,
+} from '@stylebot/page-bridge';
+import { isReaderable } from '@stylebot/readability';
+import type {
+  ElementFrame,
+  PseudoStateResult,
+  FragileSelector,
+  InspectorHost,
+  PageInspection,
+  PointerResult,
+  StyleCheckReport,
+  SuggestionContext,
+} from '@stylebot/types';
+
+import { forcePseudoStates, refreshPseudoStates } from './pseudo-states';
+import { usePointer } from './pointer';
+import { frameElement, restoreScroll } from './screenshot';
+
+/**
+ * Once a saved style has applied: how many elements each selector matches,
+ * what the page check found since startCheck, and fragile selectors.
+ */
+const finishCheck = async (
+  selectors: Array<string>,
+  host: InspectorHost
+): Promise<StyleCheckReport> => {
+  // The background's own reapply may not have landed yet.
+  await host.reapplySavedStyles();
+  await refreshPseudoStates();
+
+  return {
+    matchCounts: countMatches(selectors),
+    styleProblems: await checkStyle(),
+    fragileSelectors: selectors
+      .map(getFragileSelector)
+      .filter((fragile): fragile is FragileSelector => !!fragile),
+  };
+};
+
+/**
+ * Answers what the background asks about the page.
+ */
+export const inspectPage = async (
+  inspection: PageInspection,
+  host: InspectorHost
+): Promise<
+  | string
+  | SuggestionContext
+  | Record<string, string>
+  | Array<number | null>
+  | StyleCheckReport
+  | PointerResult
+  | ElementFrame
+  | PseudoStateResult
+  | null
+> => {
+  // A forced state's copies follow the page's styles as they change.
+  await refreshPseudoStates();
+
+  switch (inspection.kind) {
+    case 'outline':
+      return getPageOutline();
+    case 'suggestionContext':
+      return { signals: getPageSignals(), article: isReaderable() };
+    case 'cssVariables':
+      return getPageVariablesCss();
+    case 'pageRules':
+      return getPageRulesCss(inspection.selector);
+    case 'computedStyles': {
+      const { styles, unwatch } = getComputedStyles(
+        inspection.selector,
+        inspection.properties
+      );
+      // Only the editor needs to hear when a hovered element is left.
+      unwatch?.();
+      return styles;
+    }
+    case 'matchCount':
+      return countMatches(inspection.selectors);
+    case 'startCheck':
+      startStyleCheck(inspection.edits);
+      return null;
+    case 'finishCheck':
+      return finishCheck(inspection.selectors, host);
+    case 'pointer':
+      return usePointer(inspection.action);
+    case 'frameElement':
+      return frameElement(inspection.selector);
+    case 'restoreScroll':
+      restoreScroll();
+      return null;
+    case 'force':
+      return forcePseudoStates(inspection.action);
+  }
+};

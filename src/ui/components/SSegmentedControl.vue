@@ -1,0 +1,345 @@
+<template>
+  <div
+    ref="root"
+    class="segmented"
+    :class="[{ fit, disabled }, size]"
+    role="group"
+  >
+    <span
+      class="segment-indicator"
+      :class="{ ready }"
+      :style="indicatorStyle"
+    />
+
+    <s-tooltip
+      v-for="option in options"
+      ref="segments"
+      :key="option.value"
+      :grow="!fit"
+      :text="option.title"
+      :shortcut="option.shortcut"
+    >
+      <button
+        type="button"
+        class="segment"
+        :class="{
+          active: option.value === value,
+          placeholder: value === '' && option.value === placeholder,
+        }"
+        :aria-label="option.title"
+        :aria-pressed="option.value === value ? 'true' : 'false'"
+        :disabled="disabled"
+        @click="$emit('change', option.value)"
+      >
+        <span class="segment-label">
+          <slot name="option" :option="option">{{ option.label }}</slot>
+        </span>
+        <!-- Reserves the bold width so selecting a segment doesn't shift the row. -->
+        <span class="segment-label segment-sizer" aria-hidden="true">
+          <slot name="option" :option="option">{{ option.label }}</slot>
+        </span>
+      </button>
+    </s-tooltip>
+  </div>
+</template>
+
+<script lang="ts">
+import type { PropType } from 'vue';
+import Vue from 'vue';
+import STooltip from './STooltip.vue';
+
+type Option = {
+  value: string | number;
+  label?: string;
+  title?: string;
+  shortcut?: string;
+};
+
+export default Vue.extend({
+  name: 'SSegmentedControl',
+
+  components: {
+    STooltip,
+  },
+
+  model: {
+    prop: 'value',
+    event: 'change',
+  },
+
+  props: {
+    value: {
+      type: [String, Number],
+      default: '',
+    },
+
+    options: {
+      type: Array as PropType<Array<Option>>,
+      required: true,
+    },
+
+    // Segments hug their own label instead of sharing equal width — for
+    // text options of varying length (icon-based segments want equal width).
+    fit: {
+      type: Boolean,
+      default: false,
+    },
+
+    disabled: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Large is for a setting on its own page, at the size of a button, and
+    // medium sits beside a button in a compact row.
+    size: {
+      type: String as PropType<'default' | 'medium' | 'large'>,
+      default: 'default',
+    },
+
+    // The option in effect without a value set here (e.g. from the page),
+    // outlined faintly instead of selected.
+    placeholder: {
+      type: [String, Number],
+      default: '',
+    },
+  },
+
+  data(): {
+    indicatorLeft: number;
+    indicatorWidth: number;
+    ready: boolean;
+    resizeObserver: ResizeObserver | null;
+  } {
+    return {
+      indicatorLeft: 0,
+      indicatorWidth: 0,
+      // Held back until the first measurement lands, so the indicator
+      // doesn't visibly slide in from the top-left corner on mount.
+      ready: false,
+      resizeObserver: null,
+    };
+  },
+
+  computed: {
+    indicatorStyle(): { transform: string; width: string } {
+      return {
+        transform: `translateX(${this.indicatorLeft}px)`,
+        width: `${this.indicatorWidth}px`,
+      };
+    },
+  },
+
+  watch: {
+    value: {
+      immediate: true,
+      handler(): void {
+        this.$nextTick(this.measure);
+      },
+    },
+
+    options(): void {
+      this.$nextTick(this.measure);
+    },
+  },
+
+  mounted() {
+    this.resizeObserver = new ResizeObserver(() => this.measure());
+    this.resizeObserver.observe(this.$refs.root as HTMLElement);
+  },
+
+  beforeDestroy() {
+    this.resizeObserver?.disconnect();
+  },
+
+  methods: {
+    measure(): void {
+      const root = this.$refs.root as HTMLElement | undefined;
+      const segments = this.$refs.segments as Array<Vue> | undefined;
+      const index = this.options.findIndex(
+        option => option.value === this.value
+      );
+      const active = segments?.[index]?.$el as HTMLElement | undefined;
+
+      if (!root || !active) {
+        this.ready = false;
+        return;
+      }
+
+      // getBoundingClientRect, not offsetLeft/offsetWidth — integer rounding accumulates across siblings.
+      const rootRect = root.getBoundingClientRect();
+      const activeRect = active.getBoundingClientRect();
+      // Undo any ancestor transform, e.g. a menu measured mid scale-in animation.
+      const scale = rootRect.width / root.offsetWidth || 1;
+
+      this.indicatorLeft = (activeRect.left - rootRect.left) / scale;
+      this.indicatorWidth = activeRect.width / scale;
+
+      if (!this.ready) {
+        // A frame later, so the indicator appears in place rather than sliding from its last spot.
+        requestAnimationFrame(() => {
+          this.ready = this.options.some(option => option.value === this.value);
+        });
+      }
+    },
+  },
+});
+</script>
+
+<style lang="scss" scoped>
+.segmented {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--field-surface);
+
+  &.disabled {
+    opacity: 0.6;
+  }
+
+  &.fit .segment {
+    flex: none;
+    box-sizing: border-box;
+    min-width: 28px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 5px;
+    font-size: 13px;
+  }
+}
+
+.segmented.medium {
+  border-radius: 9px;
+
+  .segment {
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+
+  .segment-indicator {
+    border-radius: 7px;
+  }
+}
+
+.segmented.large {
+  padding: 3px;
+  border-radius: 10px;
+
+  .segment {
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 7px;
+    font-weight: 500;
+  }
+
+  .segment-indicator {
+    top: 3px;
+    bottom: 3px;
+    border-radius: 7px;
+  }
+}
+
+.segment-indicator {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  bottom: 2px;
+  border-radius: 5px;
+  background: var(--field-surface-active);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 18%), 0 0 0 1px rgb(0 0 0 / 6%);
+  pointer-events: none;
+
+  &:not(.ready) {
+    opacity: 0;
+  }
+
+  &.ready {
+    transition: transform 0.2s ease, width 0.2s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+}
+
+.segment {
+  position: relative;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  white-space: nowrap;
+  padding: 4px 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+  outline: none;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+
+  &:hover:not(.active):not(:disabled) {
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  }
+
+  &.active {
+    font-weight: 400;
+    color: var(--text-primary);
+  }
+
+  &.placeholder {
+    background: color-mix(
+      in srgb,
+      var(--field-surface-active) 70%,
+      transparent
+    );
+    color: var(--text-secondary);
+
+    @include dark-mode {
+      background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+      color: var(--text-body);
+    }
+  }
+
+  ::v-deep svg {
+    transition: stroke-width 0.15s ease;
+  }
+
+  &.active ::v-deep svg {
+    stroke-width: 1.9;
+  }
+
+  ::v-deep span {
+    font-weight: inherit;
+  }
+
+  &:focus-visible {
+    color: var(--text-primary);
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+
+  @include focus-ring;
+}
+
+.segment-label {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.segment .segment-sizer {
+  visibility: hidden;
+  font-weight: 400;
+}
+</style>

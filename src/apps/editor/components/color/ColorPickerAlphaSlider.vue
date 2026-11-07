@@ -1,0 +1,100 @@
+<template>
+  <div class="alpha-slider-row">
+    <input
+      type="range"
+      class="range"
+      min="0"
+      max="100"
+      step="1"
+      :value="Math.round(alpha * 100)"
+      :style="{ '--track-background': trackBackground, '--thumb-color': color }"
+      @input="$emit('input', $event.target.valueAsNumber / 100)"
+      @change="$emit('change', $event.target.valueAsNumber / 100)"
+    />
+    <div class="readout">{{ Math.round(alpha * 100) }}%</div>
+  </div>
+</template>
+
+<script lang="ts">
+import Vue from 'vue';
+import tinycolor from 'tinycolor2';
+
+export default Vue.extend({
+  name: 'ColorPickerAlphaSlider',
+
+  props: {
+    alpha: {
+      type: Number,
+      required: true,
+    },
+
+    color: {
+      type: String,
+      required: true,
+    },
+  },
+
+  computed: {
+    trackBackground(): string {
+      const { r, g, b } = tinycolor(this.color).toRgb();
+      return `linear-gradient(to right, rgba(${r}, ${g}, ${b}, 0), ${this.color}), repeating-conic-gradient(var(--field-surface-active) 0% 25%, var(--field-surface) 0% 50%) 0 / 8px 8px`;
+    },
+  },
+});
+</script>
+
+<style lang="scss" scoped>
+@import './color-picker-mixins';
+
+.alpha-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.range {
+  flex: 1;
+  min-width: 0;
+  height: 16px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+
+  &::-webkit-slider-runnable-track {
+    height: 8px;
+    border-radius: 4px;
+    @include picker-track-edge;
+    background: var(--track-background);
+  }
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    margin-top: -2px;
+    @include picker-thumb;
+    background: var(--thumb-color);
+  }
+
+  &::-moz-range-track {
+    height: 8px;
+    border-radius: 4px;
+    @include picker-track-edge;
+    background: var(--track-background);
+  }
+
+  &::-moz-range-thumb {
+    @include picker-thumb;
+    background: var(--thumb-color);
+  }
+
+  @include focus-ring(1px, '::-webkit-slider-thumb');
+
+  @include focus-ring(1px, '::-moz-range-thumb');
+}
+
+.readout {
+  @include picker-readout;
+}
+</style>

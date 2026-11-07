@@ -1,0 +1,84 @@
+import {
+  closeCliWindow,
+  getCliWindowId,
+  isSamePage,
+  openInCliWindow,
+  serializeTab,
+  waitForLoad,
+} from './cli-window';
+import { getCliModeTab, isInCliMode } from './mode';
+import { takeScreenshot } from './screenshot';
+import { inspectTab, resolveTab } from './targets';
+import type { CliCommands } from './types';
+
+export const pageCommands: CliCommands = {
+  async open({ url, forceNew }) {
+    const wanted = new URL(
+      /^[a-z][a-z\d+.-]*:/i.test(String(url)) ? String(url) : `https://${url}`
+    );
+
+    // The user's tab in CLI mode, where they follow what the agent does.
+    const cliModeTab = await getCliModeTab();
+    const cliModeTabShows =
+      !!cliModeTab?.url && isSamePage(new URL(cliModeTab.url), wanted);
+
+    if (cliModeTab && cliModeTabShows && !forceNew) {
+      return { created: false, cliMode: true, ...serializeTab(cliModeTab) };
+    }
+
+    const windowId = await getCliWindowId();
+    // Only the CLI's own tabs, so working in one never touches the user's.
+    const existing =
+      forceNew || windowId === undefined
+        ? undefined
+        : (await chrome.tabs.query({ windowId })).find(
+            tab => tab.url && isSamePage(new URL(tab.url), wanted)
+          );
+
+    if (existing) {
+      await chrome.tabs.update(existing.id as number, { active: true });
+
+      if (existing.status !== 'complete') {
+        await waitForLoad(existing.id as number);
+      }
+
+      return {
+        created: false,
+        ...serializeTab(await chrome.tabs.get(existing.id as number)),
+      };
+    }
+
+    const tab = await openInCliWindow(wanted.href);
+    await waitForLoad(tab.id as number);
+
+    return {
+      created: true,
+      ...serializeTab(await chrome.tabs.get(tab.id as number)),
+    };
+  },
+
+  async tabs() {
+    const tabs = await chrome.tabs.query({});
+
+    return tabs.map(tab => ({
+      ...serializeTab(tab),
+      cliMode: isInCliMode(tab.id),
+    }));
+  },
+
+  async outline({ tab }) {
+    const { id } = await resolveTab(tab);
+    return inspectTab<string>(id as number, { kind: 'outline' });
+  },
+
+  async screenshot(args) {
+    const screenshot = await takeScreenshot(args);
+
+    // A CLI from before --scale wants the terminale data url.
+    return args.scale === undefined ? screenshot.dataUrl : screenshot;
+  },
+
+  async done() {
+    return { closed: await closeCliWindow() };
+  },
+};

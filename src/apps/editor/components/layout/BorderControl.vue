@@ -1,0 +1,180 @@
+<template>
+  <property-row :label="t('border')">
+    <div class="border-control">
+      <s-select
+        menu-size="small"
+        class="border-style"
+        :text="text"
+        :muted="!styleValue"
+        :disabled="disabled"
+        :menu-min-width="160"
+      >
+        <template #default="{ close }">
+          <s-menu-item
+            v-for="option in options"
+            :key="option.value"
+            :selected="option.value === styleValue"
+            @click="
+              selectStyle(option.value);
+              close();
+            "
+          >
+            <span class="border-style-option">
+              <span
+                class="border-style-preview"
+                :style="{ borderBottomStyle: option.value }"
+              />
+              {{ option.title }}
+            </span>
+          </s-menu-item>
+        </template>
+      </s-select>
+
+      <length
+        class="border-width"
+        property="border-width"
+        :fallback="shorthandValue"
+      />
+      <color-picker
+        class="border-color"
+        property="border-color"
+        :fallback="shorthandValue"
+      />
+    </div>
+  </property-row>
+</template>
+
+<script lang="ts">
+import Vue from 'vue';
+import { t } from '@stylebot/i18n';
+import { SSelect, SMenuItem } from '@stylebot/components';
+import { getDeclarationValue } from '@stylebot/css';
+
+import PropertyRow from '../basic/PropertyRow.vue';
+import Length from '../Length.vue';
+import ColorPicker from '../color/ColorPicker.vue';
+import { extractBorderStyle } from '../../utils/css-value';
+import { computedKeywordPlaceholder } from '../../utils/computed-placeholder';
+
+export default Vue.extend({
+  name: 'BorderControl',
+
+  components: {
+    PropertyRow,
+    SSelect,
+    SMenuItem,
+    Length,
+    ColorPicker,
+  },
+
+  data(): {
+    options: Array<{
+      title: string;
+      value: string;
+    }>;
+  } {
+    return {
+      options: [
+        { title: t('border_none'), value: 'none' },
+        { title: t('border_solid'), value: 'solid' },
+        { title: t('border_dotted'), value: 'dotted' },
+        { title: t('border_dashed'), value: 'dashed' },
+        { title: t('border_double'), value: 'double' },
+        { title: t('border_groove'), value: 'groove' },
+        { title: t('border_ridge'), value: 'ridge' },
+        { title: t('border_inset'), value: 'inset' },
+        { title: t('border_outset'), value: 'outset' },
+      ],
+    };
+  },
+
+  computed: {
+    // Raw value of the border shorthand (e.g. '1px solid #44475a'), used
+    // to fall back to when the specific longhand isn't declared.
+    shorthandValue(): string {
+      return getDeclarationValue(this.$store.getters.activeRule, 'border');
+    },
+
+    styleValue(): string {
+      let value = getDeclarationValue(
+        this.$store.getters.activeRule,
+        'border-style'
+      );
+      if (!value && this.shorthandValue) {
+        value = extractBorderStyle(this.shorthandValue);
+      }
+
+      return value;
+    },
+
+    // Unset, it shows the page's own border style, muted.
+    text(): string {
+      const value =
+        this.styleValue ||
+        computedKeywordPlaceholder(
+          this.$store.state.computedStyles,
+          'border-style'
+        );
+      const option = this.options.find(o => o.value === value);
+      return option ? option.title : t('default');
+    },
+
+    disabled(): boolean {
+      return !this.$store.state.activeSelector;
+    },
+  },
+
+  methods: {
+    selectStyle(value: string): void {
+      this.$store.dispatch('applyDeclaration', {
+        property: 'border-style',
+        value,
+      });
+    },
+  },
+});
+</script>
+
+<style lang="scss" scoped>
+.border-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.border-style ::v-deep .select-trigger {
+  min-width: 0;
+  width: 96px;
+}
+
+.border-control .border-width {
+  min-width: 0;
+  width: 60px;
+}
+
+.border-color ::v-deep .color-field {
+  justify-content: center;
+  width: 28px;
+  min-width: 0;
+  padding: 0;
+}
+
+.border-style-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.border-style-preview {
+  flex: none;
+  width: 36px;
+  height: 0;
+  border-bottom: 3px solid var(--text-muted);
+}
+
+.border-color ::v-deep .color-hex {
+  display: none;
+}
+</style>

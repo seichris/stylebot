@@ -1,0 +1,192 @@
+import Vue from 'vue';
+import Vuex from 'vuex';
+import { addons } from '@storybook/preview-api';
+import {
+  FORCE_REMOUNT,
+  GLOBALS_UPDATED,
+  SET_GLOBALS,
+  STORY_RENDERED,
+} from '@storybook/core-events';
+import type { Preview } from '@storybook/vue';
+
+import { t } from '@stylebot/i18n';
+import { SThemeProvider } from '@stylebot/components';
+import { installChrome } from './mocks/chrome';
+import { resetHoverSettled, setInteractionDelay } from './story-helpers';
+import { setPageBridge, LocalPageBridge } from '@stylebot/page-bridge';
+import type { PageBridge } from '@stylebot/page-bridge';
+
+import '../src/assets/fonts/fonts.css';
+import '../src/apps/editor/index.scss';
+import './preview.css';
+
+Vue.use(Vuex);
+Vue.mixin({ methods: { t } });
+installChrome();
+
+// The canvas is the "page"; the bridge uses the mounted story's store like
+// the content script uses its own.
+const mountedStoryStore = () =>
+  document.querySelector<HTMLElement & { __vue__?: Vue }>(
+    '#storybook-root .stylebot-app'
+  )?.__vue__?.$store;
+
+// One bridge per story, or highlighter overlays and listeners outlive it.
+let pageBridge: LocalPageBridge | null = null;
+
+// A story can stand in for some of the bridge's methods, as for a page that
+// can't be read.
+const resetPageBridge = (overrides: Partial<PageBridge> = {}): void => {
+  pageBridge?.stopInspecting();
+  pageBridge?.unhighlight();
+  pageBridge = new LocalPageBridge({
+    getStylebotCss: () => mountedStoryStore()?.state.css ?? '',
+  });
+  Object.assign(pageBridge, overrides);
+  setPageBridge(pageBridge);
+};
+
+resetPageBridge();
+
+/* The Vue 2 renderer only pushes args into the mounted story on re-render,
+   so a toolbar theme change has to remount for the decorator and seeded
+   stores to pick it up. */
+const channel = addons.getChannel();
+let currentStoryId: string | undefined;
+let currentTheme: string | undefined;
+
+channel.on(STORY_RENDERED, (storyId: string) => {
+  currentStoryId = storyId;
+});
+
+channel.on(SET_GLOBALS, ({ globals }: { globals: { theme?: string } }) => {
+  currentTheme = globals.theme;
+});
+
+channel.on(GLOBALS_UPDATED, ({ globals }: { globals: { theme?: string } }) => {
+  const themeChanged = globals.theme !== currentTheme;
+  currentTheme = globals.theme;
+
+  if (themeChanged && currentStoryId) {
+    channel.emit(FORCE_REMOUNT, { storyId: currentStoryId });
+  }
+});
+
+const FONTS = [
+  '400 14px Geist',
+  '500 14px Geist',
+  '600 14px Geist',
+  '700 14px Geist',
+  '400 14px "Geist Mono"',
+  '500 14px "Geist Mono"',
+  '600 14px "Geist Mono"',
+  '400 14px Literata',
+];
+
+const preview: Preview = {
+  // Components that measure themselves (tooltips, tab indicators) must see
+  // final font metrics, so no story renders until the webfonts are in.
+  loaders: [
+    async () => {
+      await Promise.all(FONTS.map(font => document.fonts.load(font)));
+    },
+  ],
+
+  globalTypes: {
+    theme: {
+      description: 'Color scheme',
+      defaultValue: 'light',
+      toolbar: {
+        icon: 'mirror',
+        items: ['light', 'dark'],
+        dynamicTitle: true,
+      },
+    },
+    speed: {
+      description: 'Interaction test speed',
+      defaultValue: 'instant',
+      toolbar: {
+        icon: 'play',
+        items: [
+          { value: 'instant', title: 'Instant' },
+          { value: 'slow', title: 'Slow motion' },
+        ],
+        dynamicTitle: true,
+      },
+    },
+  },
+
+  parameters: {
+    layout: 'fullscreen',
+    controls: { expanded: false },
+    options: {
+      storySort: {
+        order: [
+          'Primitives',
+          [
+            'Theme',
+            'Typography',
+            'Buttons',
+            'Inputs',
+            'Navigation',
+            'Overlays',
+            'Display',
+          ],
+          'Editor',
+          ['Panel', 'ColorPickerPopover', 'TheKeyboardShortcutsView'],
+          'Options',
+          ['Basics', 'Styles', 'Sync'],
+          'Browser Action',
+          [
+            'Styles',
+            'Editor Toggle',
+            'Readability',
+            'Sync',
+            'Release Notification',
+            'Restricted Page',
+          ],
+          'Tests',
+        ],
+      },
+    },
+  },
+
+  decorators: [
+    (_story, { globals, parameters }) => {
+      // The editor store injects the style into the document like the
+      // content script does; the previous story's must not bleed into this
+      // one. Emptied rather than removed so the next injection reuses it.
+      document
+        .querySelectorAll('style[id^="stylebot-css-"]')
+        .forEach(el => (el.textContent = ''));
+
+      // Slow motion is for watching a play in the browser; the runner never
+      // sets it, so CI stays instant.
+      setInteractionDelay(globals.speed === 'slow' ? 250 : 0);
+      resetHoverSettled();
+      resetPageBridge(parameters.pageBridge);
+
+      // Composites read their appearance from options, so the toolbar theme
+      // flows through the shim as well as the outer SThemeProvider.
+      installChrome({
+        ...parameters.chrome,
+        options: { appearance: globals.theme, ...parameters.chrome?.options },
+      });
+
+      return {
+        components: { SThemeProvider },
+        data: () => ({
+          mode: globals.theme,
+          padded: parameters.padded !== false,
+        }),
+        template: `
+          <s-theme-provider :mode="mode" class="sb-canvas" :class="{ padded }">
+            <story />
+          </s-theme-provider>
+        `,
+      };
+    },
+  ],
+};
+
+export default preview;
