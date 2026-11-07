@@ -4,6 +4,7 @@ import {
   StylebotCommands,
   ReadabilitySettings,
   Timestamp,
+  GlobalDarkModeSettings,
 } from '@stylebot/types';
 
 export type GetAllOptionsResponse = StylebotOptions;
@@ -28,6 +29,12 @@ export type GetReadabilitySettingsResponse = ReadabilitySettings;
 
 export type GetImportCssResponse = string;
 export type RunGoogleDriveSyncResponse = void;
+export type GetDarkModeResponse = {
+  enabled: boolean;
+  siteEnabled: boolean;
+  key?: string;
+  globalSettings: GlobalDarkModeSettings;
+};
 
 type BackgroundPageMessageResponse =
   | GetAllOptionsResponse
@@ -37,6 +44,8 @@ type BackgroundPageMessageResponse =
   | GetCommandsResponse
   | GetReadabilitySettingsResponse
   | GetImportCssResponse
-  | RunGoogleDriveSyncResponse;
+  | RunGoogleDriveSyncResponse
+  | GetDarkModeResponse
+  | boolean;
 
 export default BackgroundPageMessageResponse;

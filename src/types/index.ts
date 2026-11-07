@@ -1,6 +1,13 @@
 // format: yyyy-MM-dd'T'HH:mm:ss.SSSxxx
 export type Timestamp = string;
 
+export type GlobalDarkModeSettings = {
+  enabled: boolean;
+  scheduleEnabled: boolean;
+  start: string;
+  end: string;
+};
+
 export type StylebotEditingMode = 'basic' | 'magic' | 'code';
 
 export type StylebotBasicModeSections = {

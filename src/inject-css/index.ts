@@ -4,6 +4,9 @@
  */
 import { injectCSSIntoDocument } from '@stylebot/css';
 import { apply as applyReadability } from '@stylebot/readability';
+import { initDarkModeController } from './dark-mode';
+
+initDarkModeController();
 
 import {
   GetStylesForPage,

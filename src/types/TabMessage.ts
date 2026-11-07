@@ -30,6 +30,10 @@ export type GetIsStylebotOpen = {
   name: 'GetIsStylebotOpen';
 };
 
+export type GetDarkModeStatus = {
+  name: 'GetDarkModeStatus';
+};
+
 export type UpdateReader = {
   name: 'UpdateReader';
   value: ReadabilitySettings;
@@ -43,6 +47,7 @@ type TabMessage =
   | ApplyStylesToTab
   | TabUpdated
   | GetIsStylebotOpen
+  | GetDarkModeStatus
   | UpdateReader;
 
 export default TabMessage;

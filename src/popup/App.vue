@@ -9,6 +9,8 @@
         :initial-enabled="style.enabled"
       />
 
+      <dark-mode :tab="tab" />
+
       <readability :initial-readability="readability" />
 
       <toggle-stylebot :is-open="isOpen" :tab="tab" />
@@ -28,6 +30,7 @@ import Vue from 'vue';
 import StyleComponent from './components/Style.vue';
 import ViewOptions from './components/ViewOptions.vue';
 import Readability from './components/Readability.vue';
+import DarkMode from './components/DarkMode.vue';
 import SyncStylebot from './components/SyncStylebot.vue';
 import ToggleStylebot from './components/ToggleStylebot.vue';
 import ReleaseNotification from './components/notifications/ReleaseNotification.vue';
@@ -45,6 +48,7 @@ export default Vue.extend({
     StyleComponent,
     ToggleStylebot,
     Readability,
+    DarkMode,
     SyncStylebot,
     ReleaseNotification,
   },

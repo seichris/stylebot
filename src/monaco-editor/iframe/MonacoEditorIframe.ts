@@ -124,8 +124,12 @@ class MonacEditorIframe {
 
     window.addEventListener(
       'message',
-      (message: { data: ParentUpdateCssMessage }) => {
-        if (message.data.type === 'stylebotCssUpdate') {
+      (message: MessageEvent & { data: ParentUpdateCssMessage }) => {
+        if (
+          message.source === window.parent &&
+          message.data?.type === 'stylebotCssUpdate' &&
+          typeof message.data.css === 'string'
+        ) {
           this.handleStylebotCssUpdate(message.data.css, message.data.selector);
         }
       }

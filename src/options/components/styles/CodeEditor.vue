@@ -37,16 +37,24 @@ export default Vue.extend({
     },
 
     handleMessage(message: {
+      origin: string;
       source: Window | MessagePort | ServiceWorker | null;
       data: IframeMessage;
     }): void {
+      if (
+        message.source !== this.getIframeContentWindow() ||
+        message.origin + '/' !== chrome.runtime.getURL('/') ||
+        !message.data
+      )
+        return;
       switch (message.data.type) {
         case 'stylebotMonacoIframeLoaded':
           this.handleIframeLoaded();
           break;
 
         case 'stylebotMonacoIframeCssUpdated':
-          this.handleIframeCssUpdate(message.data.css);
+          if (typeof message.data.css === 'string')
+            this.handleIframeCssUpdate(message.data.css);
           break;
       }
     },

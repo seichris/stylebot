@@ -24,6 +24,11 @@ import {
 } from './messages';
 
 import { get as getOption } from './options';
+import {
+  getDarkMode,
+  setDarkMode,
+  setGlobalDarkModeSettings,
+} from './dark-mode-settings';
 
 import {
   TabUpdated,
@@ -52,15 +57,19 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 chrome.tabs.onUpdated.addListener(async (tabId, _, tab) => {
   const option = await getOption('contextMenu');
 
-  if (option && tab.status === 'complete') {
-    ContextMenu.update(tab);
+  if (tab.status === 'complete') {
+    if (option) ContextMenu.update(tab);
 
     const message: TabUpdated = {
       name: 'TabUpdated',
     };
 
     if (!tab.url?.includes('chrome-extension://')) {
-      chrome.tabs.sendMessage(tabId, message);
+      chrome.tabs.sendMessage(
+        tabId,
+        message,
+        () => void chrome.runtime.lastError
+      );
     }
   }
 });
@@ -85,6 +94,21 @@ chrome.runtime.onMessage.addListener(
     sendResponse: (response: BackgroundPageMessageResponse) => void
   ) => {
     switch (message.name) {
+      case 'SetGlobalDarkModeSettings':
+        setGlobalDarkModeSettings(message.value).then(sendResponse);
+        break;
+      case 'GetDarkMode':
+        getDarkMode((sender.tab || message.tab)?.url || '').then(sendResponse);
+        break;
+      case 'SetDarkMode':
+        chrome.tabs.get(message.tabId, tab => {
+          if (chrome.runtime.lastError || !tab.url || tab.url !== message.url) {
+            sendResponse(false);
+            return;
+          }
+          setDarkMode(tab.url, message.value).then(sendResponse);
+        });
+        break;
       case 'GetCommands':
         GetCommands(sendResponse);
         break;

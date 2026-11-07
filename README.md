@@ -16,6 +16,9 @@ Available on [Chrome](https://chrome.google.com/webstore/detail/stylebot/oiaejid
 - Code editor - Write your own CSS
 - Readability Mode - Make articles on any site readable by hiding non-essential page elements like sidebars, footers and ads.
 - Grayscale Mode - Turn on grayscale to reduce strain from websites
+- Dark Mode - Use the popup switch above Readability to adapt light websites,
+  per site or across all websites. Global mode includes a configurable local-time
+  schedule, defaulting to 18:00–08:00. See [behavior and limitations](src/dark-mode/README.md).
 
 ## How to contribute
 

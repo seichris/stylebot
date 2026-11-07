@@ -254,3 +254,14 @@ describe('matchesWildcard', () => {
     });
   });
 });
+
+describe('malformed saved regular expressions', () => {
+  it('ignores an invalid pattern instead of breaking style loading', () => {
+    expect(BackgroundPageUtils.matches('https://example.com', '^[')).toBe(
+      false
+    );
+    expect(
+      BackgroundPageUtils.matches('https://example.com', '^https://example')
+    ).toBe(true);
+  });
+});

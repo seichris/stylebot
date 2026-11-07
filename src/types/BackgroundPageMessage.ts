@@ -3,6 +3,7 @@ import {
   StylebotCommands,
   ReadabilitySettings,
   StyleMap,
+  GlobalDarkModeSettings,
 } from '@stylebot/types';
 
 export type SetStyle = {
@@ -81,6 +82,23 @@ export type SetReadability = {
   value: boolean;
 };
 
+export type GetDarkMode = {
+  name: 'GetDarkMode';
+  tab?: chrome.tabs.Tab;
+};
+
+export type SetDarkMode = {
+  name: 'SetDarkMode';
+  tabId: number;
+  url: string;
+  value: boolean;
+};
+
+export type SetGlobalDarkModeSettings = {
+  name: 'SetGlobalDarkModeSettings';
+  value: GlobalDarkModeSettings;
+};
+
 export type GetCommands = {
   name: 'GetCommands';
 };
@@ -123,6 +141,9 @@ type BackgroundPageMessage =
   | OpenOptionsPage
   | OpenDonatePage
   | SetReadability
+  | GetDarkMode
+  | SetDarkMode
+  | SetGlobalDarkModeSettings
   | GetCommands
   | SetCommands
   | GetReadabilitySettings

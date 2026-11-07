@@ -129,7 +129,11 @@ class BackgroundPageUtils {
    * Check if the given url matches with the regex
    */
   private static matchesRegex(pageUrl: string, regex: string) {
-    return new RegExp(regex).test(pageUrl);
+    try {
+      return new RegExp(regex).test(pageUrl);
+    } catch {
+      return false;
+    }
   }
 
   /**
