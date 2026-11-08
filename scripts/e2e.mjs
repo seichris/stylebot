@@ -40,11 +40,17 @@ if (args.includes('--firefox')) {
   browser = 'edge';
 }
 
-const run = (command, commandArgs) =>
-  runOrExit(command, commandArgs, { STYLEBOT_BROWSER: browser });
+const run = (command, commandArgs, env = {}) =>
+  runOrExit(command, commandArgs, { STYLEBOT_BROWSER: browser, ...env });
 
 if (!args.includes('--no-build')) {
-  run(bin('yarn'), [browser === 'firefox' ? 'build:firefox' : 'build']);
+  run(bin('yarn'), [browser === 'firefox' ? 'build:firefox' : 'build'], {
+    // The suite starts Google sign-in but never finishes one, so a made-up
+    // client stands in where the environment sets none.
+    STYLEBOT_GOOGLE_CLIENT_ID:
+      process.env.STYLEBOT_GOOGLE_CLIENT_ID ||
+      'stylebot-e2e.apps.googleusercontent.com',
+  });
 }
 
 const playwrightArgs = args.filter(arg => !OWN_FLAGS.includes(arg));
