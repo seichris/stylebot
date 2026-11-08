@@ -11,6 +11,7 @@ global.chrome = {
 describe('import-cache', () => {
   afterEach(() => {
     localStorage.clear();
+    delete (window as any).stylebotImportCachePrunes;
   });
 
   describe('fetchImportCss', () => {
@@ -86,6 +87,68 @@ describe('import-cache', () => {
           'stylebot-import-cache:https://example.com/missing.css'
         )
       ).toBeNull();
+    });
+
+    describe('with a prune while the fetch is in flight', () => {
+      const URL = 'https://example.com/a.css';
+      const KEY = `stylebot-import-cache:${URL}`;
+      let deliver: (response: string) => void;
+
+      beforeEach(() => {
+        global.chrome.runtime.sendMessage = jest.fn(
+          (_message: any) =>
+            new Promise<string>(resolve => {
+              deliver = resolve;
+            })
+        ) as any;
+      });
+
+      it('does not write back an answer for a url the prune dropped, but still resolves with it', async () => {
+        const result = fetchImportCss(URL);
+
+        pruneImportCache(new Set());
+        deliver('.late{}');
+
+        await expect(result).resolves.toBe('.late{}');
+        expect(localStorage.getItem(KEY)).toBeNull();
+      });
+
+      it("does not restore a page-seeded entry the prune removed when the cache's refresh lands late", async () => {
+        localStorage.setItem(KEY, '.seeded{}');
+
+        await expect(fetchImportCss(URL)).resolves.toBe('.seeded{}');
+
+        pruneImportCache(new Set());
+        expect(localStorage.getItem(KEY)).toBeNull();
+
+        deliver('.late{}');
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(localStorage.getItem(KEY)).toBeNull();
+      });
+
+      it('caches an answer for a url the prune kept', async () => {
+        const result = fetchImportCss(URL);
+
+        pruneImportCache(new Set([URL]));
+        deliver('.kept{}');
+        await result;
+
+        expect(localStorage.getItem(KEY)).toBe('.kept{}');
+      });
+
+      it("honours a prune run by another of Stylebot's scripts on the page", async () => {
+        const result = fetchImportCss(URL);
+
+        jest.isolateModules(() => {
+          const other = require('./import-cache');
+          other.pruneImportCache(new Set());
+        });
+        deliver('.late{}');
+        await result;
+
+        expect(localStorage.getItem(KEY)).toBeNull();
+      });
     });
   });
 

@@ -23,6 +23,7 @@ import {
 import { getFeedbackUrl } from '@stylebot/utils';
 
 import * as styleStorage from './styles';
+import { canFetchImport } from './import-access';
 import { isStylebotSite } from './is-stylebot-site';
 
 import {
@@ -350,13 +351,21 @@ export const SetReadabilitySettings = (
   setReadabilitySettings(message.value);
 };
 
+/**
+ * Fetches a stylesheet a page's @import asks for, if the page may have it
+ * fetched (see canFetchImport). Any other url gets an empty answer, as a
+ * failed fetch does, without being fetched.
+ */
 export const GetImportCss = async (
   message: GetImportCssType,
-
+  sender: chrome.runtime.MessageSender,
   sendResponse: (response: GetImportCssResponse) => void
 ): Promise<void> => {
-  const css = await getImportCss(message.url);
-  sendResponse(css);
+  const allowed =
+    typeof message.url === 'string' &&
+    (await canFetchImport(message.url, sender));
+
+  sendResponse(allowed ? await getImportCss(message.url) : '');
 };
 
 export const GetCompiledStyles = async (

@@ -498,12 +498,8 @@ export default {
     try {
       const root = postcss.parse(css);
 
-      getPageBridge().applyCss({
-        url: state.url,
-        css,
-        enabled: state.enabled,
-        forceImportant: state.forceImportant,
-      });
+      // Saved first: the background only fetches an @import the stored styles
+      // have, and the page asks for this css's imports as it applies it.
       setStyle(
         state.url,
         removeEmptyRules(css),
@@ -511,6 +507,12 @@ export default {
         state.forceImportant,
         state.activeProfile
       );
+      getPageBridge().applyCss({
+        url: state.url,
+        css,
+        enabled: state.enabled,
+        forceImportant: state.forceImportant,
+      });
 
       if (record && css !== state.css) {
         commit(

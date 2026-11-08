@@ -19,17 +19,48 @@ export type CachedState = {
   options?: PageStyleOptions;
 };
 
+const isStringArray = (value: unknown): value is Array<string> =>
+  Array.isArray(value) && value.every(item => typeof item === 'string');
+
+const isCachedStyle = (value: unknown): value is CachedStyle => {
+  const style = value as Partial<CachedStyle> | null;
+
+  return (
+    typeof style === 'object' &&
+    style !== null &&
+    typeof style.url === 'string' &&
+    typeof style.css === 'string' &&
+    typeof style.enabled === 'boolean' &&
+    isStringArray(style.importUrls)
+  );
+};
+
+const isPageStyleOptions = (value: unknown): value is PageStyleOptions =>
+  typeof value === 'object' &&
+  value !== null &&
+  Object.values(value).every(
+    option =>
+      typeof option?.value === 'string' && typeof option?.css === 'string'
+  );
+
 /**
- * The cached state, if it was written by this compiler version. Anything else,
- * including caches from before styles were compiled, reads as no cache and is
- * overwritten by the next write.
+ * The cached state, if this compiler version wrote it in writeCache's shape;
+ * anything else reads as no cache and is overwritten by the next write. The
+ * page can write localStorage too, so the cache only paints: the background
+ * checks each @import it lists against the stored styles.
  */
 export const readCache = (): CachedState | null => {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     const cached = raw ? JSON.parse(raw) : null;
 
-    if (cached?.version !== COMPILED_STYLES_VERSION) {
+    if (
+      cached?.version !== COMPILED_STYLES_VERSION ||
+      !Array.isArray(cached.styles) ||
+      !cached.styles.every(isCachedStyle) ||
+      typeof cached.readability !== 'boolean' ||
+      (cached.options !== undefined && !isPageStyleOptions(cached.options))
+    ) {
       return null;
     }
 

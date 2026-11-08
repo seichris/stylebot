@@ -42,8 +42,8 @@ const PREVIEW_ID = 'font-preview';
 
 /**
  * The style as the page gets it, compiled from the css as it's saved, or null
- * when it doesn't parse yet (mid-edit). Compiled once per edit, since the
- * save is only sent after applyCss returns.
+ * when it doesn't parse yet (mid-edit). Compiled here once per edit, since
+ * the background compiles its saved copy without sending it back to the page.
  */
 const compileForPage = (
   css: string,

@@ -55,6 +55,52 @@ describe('cache', () => {
       expect(readCache()).toBeNull();
     });
 
+    it.each([
+      ['styles that are not a list', { styles: 'x', readability: false }],
+      [
+        'a style without its import list',
+        {
+          styles: [{ url: 'a.com', css: 'a{}', enabled: true }],
+          readability: false,
+        },
+      ],
+      [
+        'imports that are not strings',
+        {
+          styles: [
+            { url: 'a.com', css: 'a{}', enabled: true, importUrls: [{}] },
+          ],
+          readability: false,
+        },
+      ],
+      ['a readability that is not a boolean', { styles: [], readability: 1 }],
+      [
+        'options that are not style options',
+        { styles: [], readability: false, options: { dark: 1 } },
+      ],
+    ])(
+      'returns null for a cache with %s, which the page may have written',
+      (_name, cache) => {
+        localStorage.setItem(
+          CACHE_KEY,
+          JSON.stringify({ version: COMPILED_STYLES_VERSION, ...cache })
+        );
+
+        expect(readCache()).toBeNull();
+      }
+    );
+
+    it('reads back options it wrote', () => {
+      const withOptions: CachedState = {
+        ...sampleState,
+        options: { scheme: { value: 'dark', css: 'dark' } },
+      };
+
+      writeCache(withOptions);
+
+      expect(readCache()).toEqual(withOptions);
+    });
+
     it('returns null for corrupt JSON instead of throwing', () => {
       localStorage.setItem(CACHE_KEY, '{not valid json');
 

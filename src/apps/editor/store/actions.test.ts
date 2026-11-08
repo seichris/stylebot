@@ -96,6 +96,19 @@ describe('actions', () => {
       expect(mockCommit).toHaveBeenNthCalledWith(3, 'setSelectors', mockRoot);
     });
 
+    it('saves the css before applying it, so the background has its @imports by the time the page asks for them', () => {
+      actions.applyCss(
+        { commit: mockCommit, state: mockState },
+        { css: '@import url(https://example.com/a.css); a { color: red; }' }
+      );
+
+      const [saved] = (chromeUtils.setStyle as jest.Mock).mock
+        .invocationCallOrder;
+      const [applied] = mockBridge.applyCss.mock.invocationCallOrder;
+
+      expect(saved).toBeLessThan(applied);
+    });
+
     it('records the css it replaces under the given source', () => {
       const state = { ...mockState, css: 'before' };
 

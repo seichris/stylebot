@@ -1,16 +1,19 @@
 jest.mock('./styles');
 jest.mock('./color-history');
 jest.mock('./editor-window');
+jest.mock('./import-access', () => ({ canFetchImport: jest.fn() }));
 
 import {
   SetReadability,
   GetRecentColors,
   AddRecentColor,
+  GetImportCss,
   OpenOptionsPage,
   OpenShortcutsPage,
 } from './messages';
 import * as stylesModule from './styles';
 import * as colorHistoryModule from './color-history';
+import { canFetchImport } from './import-access';
 
 describe('SetReadability', () => {
   beforeEach(() => {
@@ -81,6 +84,66 @@ describe('AddRecentColor', () => {
 
     expect(colorHistoryModule.add).toBeCalledWith('#00ff00');
     expect(sendResponse).toBeCalledWith(['#00ff00', '#ff0000']);
+  });
+});
+
+describe('GetImportCss', () => {
+  const sender = {
+    id: 'stylebot',
+    url: 'https://example.com/',
+  } as chrome.runtime.MessageSender;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('fetches an import the page may have fetched', async () => {
+    (canFetchImport as jest.Mock).mockResolvedValue(true);
+    (stylesModule.getImportCss as jest.Mock).mockResolvedValue('.a{}');
+    const sendResponse = jest.fn();
+
+    await GetImportCss(
+      { name: 'GetImportCss', url: 'https://cdn.example.com/a.css' },
+      sender,
+      sendResponse
+    );
+
+    expect(canFetchImport).toBeCalledWith(
+      'https://cdn.example.com/a.css',
+      sender
+    );
+    expect(stylesModule.getImportCss).toBeCalledWith(
+      'https://cdn.example.com/a.css'
+    );
+    expect(sendResponse).toBeCalledWith('.a{}');
+  });
+
+  it('answers empty without fetching an import the page may not have fetched', async () => {
+    (canFetchImport as jest.Mock).mockResolvedValue(false);
+    const sendResponse = jest.fn();
+
+    await GetImportCss(
+      { name: 'GetImportCss', url: 'http://intranet.example/site.css' },
+      sender,
+      sendResponse
+    );
+
+    expect(stylesModule.getImportCss).not.toBeCalled();
+    expect(sendResponse).toBeCalledWith('');
+  });
+
+  it('answers empty for a url that is not a string', async () => {
+    const sendResponse = jest.fn();
+
+    await GetImportCss(
+      { name: 'GetImportCss', url: { href: 'x' } as unknown as string },
+      sender,
+      sendResponse
+    );
+
+    expect(canFetchImport).not.toBeCalled();
+    expect(stylesModule.getImportCss).not.toBeCalled();
+    expect(sendResponse).toBeCalledWith('');
   });
 });
 

@@ -6,6 +6,7 @@ import { style } from '../../features/gallery/gallery.fixtures';
 import {
   endGalleryPreviewOffSite,
   getGalleryPreview,
+  getGalleryPreviewImportUrls,
   installGalleryPreview,
   openGalleryPreview,
   setGalleryPreviewOption,
@@ -87,6 +88,22 @@ describe('gallery preview', () => {
       { name: 'ShowGalleryPreview', preview, replacedUrls: ['github.com'] },
       expect.any(Function)
     );
+  });
+
+  it("lists the preview's imports for pages on its site, and none for other pages or tabs", async () => {
+    styleResponse('@import url(https://example.com/a.css);\na { color: red; }');
+
+    await startGalleryPreview(TAB_ID, style.id);
+
+    await expect(
+      getGalleryPreviewImportUrls(TAB_ID, 'https://github.com/ankit')
+    ).resolves.toEqual(['https://example.com/a.css']);
+    await expect(
+      getGalleryPreviewImportUrls(TAB_ID, 'https://elsewhere.example/')
+    ).resolves.toEqual([]);
+    await expect(
+      getGalleryPreviewImportUrls(TAB_ID + 1, 'https://github.com/')
+    ).resolves.toEqual([]);
   });
 
   it('carries the options a style declares, at their defaults', async () => {

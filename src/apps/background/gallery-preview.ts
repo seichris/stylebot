@@ -95,6 +95,21 @@ export const getGalleryPreview = async (
 ): Promise<GalleryPreview | null> => (await readPreviews())[tabId] ?? null;
 
 /**
+ * The @import urls of the gallery style a tab previews, while the page asking
+ * is on that style's site; none otherwise.
+ */
+export const getGalleryPreviewImportUrls = async (
+  tabId: number,
+  pageUrl: string
+): Promise<Array<string>> => {
+  const preview = await getGalleryPreview(tabId);
+
+  return preview && isOnSite(pageUrl, preview.style.site)
+    ? preview.importUrls ?? []
+    : [];
+};
+
+/**
  * Records a value picked for an option of a tab's preview, so it stays as the
  * preview moves to the site's other pages, and is kept once it's installed.
  */

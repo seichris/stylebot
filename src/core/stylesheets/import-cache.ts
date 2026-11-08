@@ -5,6 +5,17 @@ import { pruneFontCache } from './font-cache';
 const IMPORT_CACHE_PREFIX = 'stylebot-import-cache:';
 const importCacheKey = (url: string) => `${IMPORT_CACHE_PREFIX}${url}`;
 
+type Prunes = { count: number; liveUrls: ReadonlySet<string> };
+
+// On the window Stylebot's scripts on the page share, since each bundles this
+// module and a fetch one starts can outlive a prune another runs.
+type ImportCacheWindow = Window & { stylebotImportCachePrunes?: Prunes };
+
+const shared = window as ImportCacheWindow;
+
+const getPrunes = (): Prunes =>
+  shared.stylebotImportCachePrunes ?? { count: 0, liveUrls: new Set() };
+
 const readImportCache = (url: string): string | null => {
   try {
     return localStorage.getItem(importCacheKey(url));
@@ -28,6 +39,11 @@ const writeImportCache = (url: string, css: string): void => {
  * the font files only those responses loaded.
  */
 export const pruneImportCache = (liveUrls: ReadonlySet<string>): void => {
+  shared.stylebotImportCachePrunes = {
+    count: getPrunes().count + 1,
+    liveUrls: new Set(liveUrls),
+  };
+
   try {
     const staleKeys: Array<string> = [];
 
@@ -52,7 +68,8 @@ export const pruneImportCache = (liveUrls: ReadonlySet<string>): void => {
 
 /**
  * Fetches a stylesheet's CSS via the background service worker, to get
- * around CORS. Empty when it can't be fetched.
+ * around CORS. Empty when it can't be fetched, or when the background won't
+ * fetch it for this page because no saved style for it imports it.
  */
 export const requestImportCss = (url: string): Promise<string> => {
   const message: GetImportCss = { name: 'GetImportCss', url };
@@ -62,10 +79,17 @@ export const requestImportCss = (url: string): Promise<string> => {
     .catch(() => '');
 };
 
+/**
+ * Fetches an import and caches the answer, unless a prune while it was in
+ * flight dropped its url: the saved styles that prune went by no longer use
+ * it, so writing it back would restore an entry they don't account for.
+ */
 const fetchAndCacheImportCss = async (url: string): Promise<string> => {
+  const prunesBefore = getPrunes().count;
   const response = await requestImportCss(url);
+  const prunes = getPrunes();
 
-  if (response) {
+  if (response && (prunes.count === prunesBefore || prunes.liveUrls.has(url))) {
     writeImportCache(url, response);
   }
 

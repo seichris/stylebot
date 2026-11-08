@@ -382,7 +382,7 @@ export const initListeners = (): void => {
           break;
 
         case 'GetImportCss':
-          GetImportCss(message, sendResponse);
+          GetImportCss(message, sender, sendResponse);
           return true;
         case 'GetCompiledStyles':
           GetCompiledStyles(sendResponse);

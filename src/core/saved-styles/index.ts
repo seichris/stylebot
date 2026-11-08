@@ -1,4 +1,4 @@
-export { isStylableDocument } from './url';
+export { isStylableDocument, matchesUrlPattern } from './url';
 export { getStylesForPage } from './page';
 export {
   isEquivalentCss,
