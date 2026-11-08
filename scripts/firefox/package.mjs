@@ -64,17 +64,32 @@ beyond the npm registry is needed.
 
 ## Notes for reviewers
 
-Stylebot has no server and no analytics. It only talks to these, and only
-when the user turns the feature on:
+Stylebot shows no ads and runs no analytics scripts. Besides the pages the
+user styles, it talks to these:
 
-- **Sync** signs in with Google through \`identity\` and stores styles in the
-  user's own Google Drive, with the \`drive.file\` scope, so it only sees files
-  it created.
-- **Google Fonts**: when the user picks a web font in the editor, the font
-  is loaded from Google Fonts.
+- **Gallery** (\`api.stylebot.dev\`), on by default: when the popup opens on a
+  public site the Gallery lists, Stylebot asks the Gallery for that site's
+  styles, sending its hostname. The list of sites is downloaded to decide
+  that locally; private windows never ask, and the Gallery suggestions setting
+  turns it off. Installing a Gallery style sends a random install id, kept in
+  the browser's synced storage, so each person's install counts once. Styles
+  installed from the Gallery are checked for updates once a day, by style id,
+  and updated unless the user edited them; there's no setting for this.
+  Publishing a style hands the Gallery site its CSS, name, url pattern and a
+  screenshot of the page, only when the user clicks Publish.
+- **Sync**, only when the user turns it on, signs in with Google through
+  \`identity\` and stores styles in the user's own Google Drive, with the
+  \`drive.file\` scope, so it only sees files it created.
+- **Google Fonts**: fonts the user picks in the editor or the reader are
+  loaded from Google Fonts.
+- **Imported stylesheets**: a style's \`@import\` rules are fetched for the
+  pages that style applies to, from whatever host the style names.
+- **stylebot.dev**: a welcome page opens on install and release notes on some
+  updates, and uninstalling opens a goodbye page with the version in its url.
 
-All code ships in the package; nothing is loaded remotely. The privacy policy
-is at https://stylebot.dev/privacy.
+All code ships in the package; nothing but CSS is loaded remotely: Gallery
+styles and the stylesheets a style imports. The privacy policy is at
+https://stylebot.dev/privacy.
 `;
 }
 
