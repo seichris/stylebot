@@ -21,7 +21,7 @@
           :active-profile="siteActiveProfile"
           :enabled="siteEnabled"
           :disable-off="isOpen"
-          :joined="hasToggleRows"
+          joined
           :previewing="galleryPreviewing"
           :publish-items="publishItems"
           :options="siteOptions"
@@ -44,11 +44,10 @@
             </div>
           </div>
 
-          <div v-if="hasToggleRows" class="popup-divider" />
+          <div class="popup-divider" />
         </template>
 
         <div
-          v-if="hasToggleRows"
           class="popup-menu"
           :class="{ 'popup-menu--after-profiles': showProfileList }"
         >
@@ -89,6 +88,8 @@
             :profiles="profilesOf(style)"
             :editable="style.url !== styles[0].url"
           />
+
+          <dark-mode :tab="tab" />
 
           <readability
             v-if="showReadability"
@@ -159,6 +160,7 @@ import ProfileOptions from './components/ProfileOptions.vue';
 import CreateProfile from './components/CreateProfile.vue';
 import PopupMoreMenu from './components/PopupMoreMenu.vue';
 import Readability from './components/Readability.vue';
+import DarkMode from './components/DarkMode.vue';
 import SyncStylebot from './components/SyncStylebot.vue';
 import ToggleStylebot from './components/ToggleStylebot.vue';
 import UnsupportedPage from './components/UnsupportedPage.vue';
@@ -226,6 +228,7 @@ export default Vue.extend({
     CreateProfile,
     ToggleStylebot,
     Readability,
+    DarkMode,
     SyncStylebot,
     UnsupportedPage,
     ReleaseNotification,
@@ -355,12 +358,6 @@ export default Vue.extend({
     // Kept in place while hidden, so editing a profile can still open the editor.
     footerShown(): boolean {
       return !this.galleryBrowsing && !this.galleryPreviewing;
-    },
-
-    hasToggleRows(): boolean {
-      return (
-        this.showSiteStyle || this.showReadability || this.rowStyles.length > 0
-      );
     },
 
     // Names the profile the editor would open on, once it has a name: a

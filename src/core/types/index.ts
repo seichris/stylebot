@@ -2,6 +2,7 @@ export * from './shared';
 export * from './options';
 export * from './css';
 export * from './readability';
+export * from './dark-mode';
 export * from './commands';
 export * from './sync';
 export * from './history';

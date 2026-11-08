@@ -7,9 +7,12 @@ import {
 } from '@/apps/background/color-history';
 
 import {
+  GLOBAL_DARK_MODE_KEY,
   defaultOptions,
   defaultCommands,
   defaultReadabilitySettings,
+  isDarkModeEnabled,
+  normalizeGlobalDarkModeSettings,
 } from '@stylebot/settings';
 import type {
   Style,
@@ -168,6 +171,32 @@ export const installChrome = (overrides: ChromeShimOptions = {}): void => {
       message.optionName ? options[message.optionName] : undefined,
     GetAllOptions: () => options,
     GetReadabilitySettings: () => readabilitySettings,
+    // Dark mode as the background answers it, over the shim's storage.
+    GetDarkMode: () => {
+      const key = 'dark-mode:https://example.com';
+      const globalSettings = normalizeGlobalDarkModeSettings(
+        storage[GLOBAL_DARK_MODE_KEY]
+      );
+      const siteEnabled = storage[key] === true;
+
+      return {
+        key,
+        siteEnabled,
+        globalSettings,
+        enabled: isDarkModeEnabled(siteEnabled, globalSettings),
+      };
+    },
+    SetDarkMode: message => {
+      const { value } = message as unknown as { value: boolean };
+      storage['dark-mode:https://example.com'] = value;
+      return true;
+    },
+    SetGlobalDarkModeSettings: message => {
+      storage[GLOBAL_DARK_MODE_KEY] = (
+        message as unknown as { value: unknown }
+      ).value;
+      return true;
+    },
     // The background's own history, over the shim's storage.
     GetRecentColors: () => getAllRecentColors(),
     AddRecentColor: ({ color = '' }) => addRecentColor(color),

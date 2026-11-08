@@ -74,3 +74,14 @@ export {
   getCliConnected,
   onCliConnectedChange,
 } from './cli';
+
+export {
+  GLOBAL_DARK_MODE_KEY,
+  defaultGlobalDarkModeSettings,
+  getDarkModeSiteKey,
+  isValidGlobalDarkModeSettings,
+  normalizeGlobalDarkModeSettings,
+  isGlobalDarkModeActive,
+  isDarkModeEnabled,
+  nextMinuteDelay,
+} from './dark-mode';

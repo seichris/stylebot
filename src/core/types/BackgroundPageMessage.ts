@@ -2,6 +2,7 @@ import type { CliModeEvent } from './cli-mode';
 import type { StyleMap } from './styles';
 import type { StylebotOptions } from './options';
 import type { ReadabilitySettings } from './readability';
+import type { GlobalDarkModeSettings } from './dark-mode';
 import type { StylebotCommandName } from './commands';
 
 export type SetStyle = {
@@ -146,6 +147,31 @@ export type GetReadabilitySettings = {
 export type SetReadabilitySettings = {
   name: 'SetReadabilitySettings';
   value: ReadabilitySettings;
+};
+
+/**
+ * Dark mode for a tab's site, and for all websites. A page's script is
+ * answered for its own tab's site; the popup names the tab it shows.
+ */
+export type GetDarkMode = {
+  name: 'GetDarkMode';
+  tabId?: number;
+};
+
+/**
+ * Turns Dark mode on or off for a tab's site, from the popup. `url` is the
+ * page the popup showed the switch for, which the tab must still be on.
+ */
+export type SetDarkMode = {
+  name: 'SetDarkMode';
+  tabId: number;
+  url: string;
+  value: boolean;
+};
+
+export type SetGlobalDarkModeSettings = {
+  name: 'SetGlobalDarkModeSettings';
+  value: GlobalDarkModeSettings;
 };
 
 export type GetImportCss = {
@@ -467,6 +493,9 @@ type BackgroundPageMessage =
   | UndoGalleryInstall
   | GetGalleryInstallStatus
   | PublishGalleryStyleUpdate
-  | CliModeEvent;
+  | CliModeEvent
+  | GetDarkMode
+  | SetDarkMode
+  | SetGlobalDarkModeSettings;
 
 export default BackgroundPageMessage;

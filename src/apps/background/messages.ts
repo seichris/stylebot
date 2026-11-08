@@ -23,6 +23,11 @@ import {
 import { getFeedbackUrl } from '@stylebot/utils';
 
 import * as styleStorage from './styles';
+import {
+  getDarkMode,
+  setDarkMode,
+  setGlobalDarkModeSettings,
+} from './dark-mode-settings';
 import { canFetchImport } from './import-access';
 import { isStylebotSite } from './is-stylebot-site';
 
@@ -52,6 +57,12 @@ import type {
   SetReadability as SetReadabilityType,
   ReadabilityStateChanged,
   SetReadabilitySettings as SetReadabilitySettingsType,
+  GetDarkMode as GetDarkModeType,
+  GetDarkModeResponse,
+  SetDarkMode as SetDarkModeType,
+  SetDarkModeResponse,
+  SetGlobalDarkModeSettings as SetGlobalDarkModeSettingsType,
+  SetGlobalDarkModeSettingsResponse,
   GetImportCss as GetImportCssType,
   GetCompiledStylesResponse,
   GetGoogleWebFontExists as GetGoogleWebFontExistsType,
@@ -349,6 +360,76 @@ export const SetReadabilitySettings = (
   message: SetReadabilitySettingsType
 ): void => {
   setReadabilitySettings(message.value);
+};
+
+/**
+ * Whether a message came from one of the extension's own pages, such as the
+ * popup, rather than from a script it runs in a web page.
+ */
+const isFromExtensionPage = (sender: chrome.runtime.MessageSender): boolean =>
+  sender.id === chrome.runtime.id &&
+  (sender.url ?? '').startsWith(chrome.runtime.getURL(''));
+
+/**
+ * Answers Dark mode for the site of the asking page's tab, which the frames
+ * in it share; or, for the popup, of the tab it names.
+ */
+export const GetDarkMode = async (
+  message: GetDarkModeType,
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response: GetDarkModeResponse) => void
+): Promise<void> => {
+  let url = sender.tab?.url;
+
+  if (isFromExtensionPage(sender) && typeof message.tabId === 'number') {
+    url = (await chrome.tabs.get(message.tabId).catch(() => undefined))?.url;
+  }
+
+  sendResponse(await getDarkMode(url ?? ''));
+};
+
+/**
+ * Saves a site's Dark mode choice from the popup, for the page its tab is on
+ * and only while the tab is still on the page the popup showed the switch
+ * for, so a choice never lands on a site the tab has since moved to.
+ */
+export const SetDarkMode = async (
+  message: SetDarkModeType,
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response: SetDarkModeResponse) => void
+): Promise<void> => {
+  if (
+    !isFromExtensionPage(sender) ||
+    typeof message.tabId !== 'number' ||
+    typeof message.url !== 'string' ||
+    typeof message.value !== 'boolean'
+  ) {
+    sendResponse(false);
+    return;
+  }
+
+  const tab = await chrome.tabs.get(message.tabId).catch(() => undefined);
+
+  if (!tab?.url || tab.url !== message.url) {
+    sendResponse(false);
+    return;
+  }
+
+  sendResponse(await setDarkMode(tab.url, message.value));
+};
+
+/**
+ * Saves Dark mode's global settings from the popup.
+ */
+export const SetGlobalDarkModeSettings = async (
+  message: SetGlobalDarkModeSettingsType,
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response: SetGlobalDarkModeSettingsResponse) => void
+): Promise<void> => {
+  sendResponse(
+    isFromExtensionPage(sender) &&
+      (await setGlobalDarkModeSettings(message.value))
+  );
 };
 
 /**

@@ -38,6 +38,9 @@ import {
   SetReadability,
   GetReadabilitySettings,
   SetReadabilitySettings,
+  GetDarkMode,
+  SetDarkMode,
+  SetGlobalDarkModeSettings,
   GetImportCss,
   GetCompiledStyles,
   GetGoogleWebFontExists,
@@ -380,6 +383,16 @@ export const initListeners = (): void => {
         case 'SetReadabilitySettings':
           SetReadabilitySettings(message);
           break;
+
+        case 'GetDarkMode':
+          GetDarkMode(message, sender, sendResponse);
+          return true;
+        case 'SetDarkMode':
+          SetDarkMode(message, sender, sendResponse);
+          return true;
+        case 'SetGlobalDarkModeSettings':
+          SetGlobalDarkModeSettings(message, sender, sendResponse);
+          return true;
 
         case 'GetImportCss':
           GetImportCss(message, sender, sendResponse);

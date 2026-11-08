@@ -1,7 +1,8 @@
 /**
  * Injects custom CSS for the page as soon as it starts loading. Applies the
  * localStorage cache (cache.ts) immediately if there is one, otherwise hides
- * the page (hide-page.ts) until chrome.storage.local.get resolves.
+ * the page (hide-page.ts) until chrome.storage.local.get resolves. Runs Dark
+ * mode in every frame too (dark-mode.ts).
  */
 import { isReaderShowing, isReaderable } from '@stylebot/readability';
 import { isStylableDocument } from '@stylebot/saved-styles';
@@ -14,6 +15,7 @@ import {
   showGalleryPreview,
 } from './gallery-preview';
 import { hidePage, revealPage } from './hide-page';
+import { initDarkMode } from './dark-mode';
 import { applyPageState, getPageState, savePageState } from './page-state';
 import { getCompiledStyles } from './saved-styles';
 
@@ -78,4 +80,5 @@ const run = () => {
 
 if (canStyle) {
   run();
+  initDarkMode();
 }

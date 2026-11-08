@@ -2,6 +2,7 @@ import type { CompiledStyles, Style, StyleMap } from './styles';
 import type { StylebotOptions } from './options';
 import type { StylebotCommands } from './commands';
 import type { ReadabilitySettings } from './readability';
+import type { GlobalDarkModeSettings } from './dark-mode';
 import type { GoogleDriveSyncMetadata } from './sync';
 import type { RestoreResult, VersionHistory } from './history';
 import type {
@@ -113,6 +114,21 @@ export type InstallGalleryPreviewResponse = GalleryResult<{
 }>;
 export type UndoGalleryInstallResponse = GalleryResult;
 
+/**
+ * Dark mode for a site: `key` stores its own choice, and is missing for a
+ * page Dark mode can't apply to; `enabled` is whether it's on there now.
+ */
+export type GetDarkModeResponse = {
+  key?: string;
+  siteEnabled: boolean;
+  globalSettings: GlobalDarkModeSettings;
+  enabled: boolean;
+};
+
+// Whether the choice was saved.
+export type SetDarkModeResponse = boolean;
+export type SetGlobalDarkModeSettingsResponse = boolean;
+
 type BackgroundPageMessageResponse =
   | GetAllOptionsResponse
   | GetOptionResponse
@@ -148,6 +164,9 @@ type BackgroundPageMessageResponse =
   | GetGalleryPreviewResponse
   | InstallGalleryPreviewResponse
   | UndoGalleryInstallResponse
-  | GetGalleryInstallStatusResponse;
+  | GetGalleryInstallStatusResponse
+  | GetDarkModeResponse
+  | SetDarkModeResponse
+  | SetGlobalDarkModeSettingsResponse;
 
 export default BackgroundPageMessageResponse;

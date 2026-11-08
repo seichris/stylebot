@@ -416,6 +416,8 @@ const clientConfig = {
     'google-sign-in/index': './apps/options/google-sign-in/index.ts',
     'editor-window/index': './apps/editor/window/index.ts',
     'inject-css/index': './apps/content/content-script.ts',
+    // Dark mode's engine, which the content script loads once it's on.
+    'inject-css/dark-mode': './apps/content/dark-mode-engine.ts',
     'site-bridge/index': './apps/site-bridge/content-script.ts',
     'gallery-preview/index': './apps/gallery-preview/index.ts',
     'monaco-editor/iframe/index': './apps/monaco-iframe/index.ts',

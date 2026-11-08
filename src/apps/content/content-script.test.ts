@@ -13,6 +13,7 @@ jest.mock('@stylebot/saved-styles', () => ({
   getStylesForPage: jest.fn(),
 }));
 jest.mock('@stylebot/readability');
+jest.mock('./dark-mode', () => ({ initDarkMode: jest.fn() }));
 
 const flushPromises = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -34,6 +35,7 @@ describe('inject-css run()', () => {
   let stylesheets: typeof import('@stylebot/stylesheets');
   let hidePageModule: typeof import('./hide-page');
   let stylesModule: typeof import('@stylebot/saved-styles');
+  let darkModeModule: typeof import('./dark-mode');
   let sendMessage: jest.Mock;
   let registeredListener: (
     message: { name: string },
@@ -48,6 +50,7 @@ describe('inject-css run()', () => {
     stylesheets = require('@stylebot/stylesheets');
     hidePageModule = require('./hide-page');
     stylesModule = require('@stylebot/saved-styles');
+    darkModeModule = require('./dark-mode');
 
     sendMessage = jest.fn();
     Object.defineProperty(document, 'contentType', {
@@ -162,6 +165,7 @@ describe('inject-css run()', () => {
 
     expect(hidePageModule.hidePage).not.toHaveBeenCalled();
     expect(stylesModule.getStylesForPage).not.toHaveBeenCalled();
+    expect(darkModeModule.initDarkMode).not.toHaveBeenCalled();
     const sendResponse = jest.fn();
     registeredListener({ name: 'GetCanStylePage' }, {}, sendResponse);
     expect(sendResponse).toHaveBeenCalledWith(false);
@@ -261,5 +265,14 @@ describe('inject-css run()', () => {
       { styles: [], readability: true },
       null
     );
+  });
+
+  it('starts Dark mode on a page it can style', () => {
+    (stylesheets.readCache as jest.Mock).mockReturnValue(null);
+    matching([]);
+
+    load();
+
+    expect(darkModeModule.initDarkMode).toHaveBeenCalledTimes(1);
   });
 });

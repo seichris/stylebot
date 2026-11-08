@@ -18,6 +18,7 @@ Change the appearance of any website. Available for [Chrome](https://chrome.goog
 - **Code editor**: Write your own CSS with autocomplete and color swatches.
 - **Instant**: Every change applies as you make it and saves automatically.
 - **Presets**: Readability for distraction-free articles, Grayscale to mute color.
+- **Dark mode**: Darken light websites, one site at a time or all of them, on a daily schedule if you like.
 - **Sync and history**: Keep styles in sync across browsers and restore any site's earlier versions.
 - **Command line**: Restyle pages from the terminal, or let a coding agent such as Claude Code do it.
 

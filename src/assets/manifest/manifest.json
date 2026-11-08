@@ -86,6 +86,7 @@
         "gallery-preview/index.css",
         "fonts/*",
         "readability/reader.js",
+        "inject-css/dark-mode.js",
         "readability/reader.css",
         "google-fonts/fonts.json"
       ],

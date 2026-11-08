@@ -6,7 +6,7 @@ Browser extension (Chrome/Edge/Firefox) that lets users change the appearance of
 
 - `src/` — extension source, grouped into tiers. Each folder directly inside a tier is a package, imported as `@stylebot/<folder>` (resolved by `scripts/lib/src-packages.js`; `@stylebot/inject-css` keeps its old name for `apps/content`):
   - `src/apps/` — webpack entries and HTML pages: `background`, `popup`, `options`, `editor` (with the pop-out window in `editor/window`), `content` (the content script), `reader` (the readability UI bundle), `cli-inspector` (what the CLI reads and does on a page, loaded on its first request), `side-panel-default` (the manifest's default side panel, which closes itself; only Vivaldi shows it), `monaco-iframe`
-  - `src/features/` — capabilities shared by apps: `sync`, `history`, `page-bridge`, `highlighter`, `google-fonts`, `readability` (eligibility and reader lifecycle), `side-panel` (the editor's side panel and its optional permission), `monaco-editor`
+  - `src/features/` — capabilities shared by apps: `sync`, `history`, `page-bridge`, `highlighter`, `google-fonts`, `readability` (eligibility and reader lifecycle), `dark-mode` (the engine that darkens light pages), `side-panel` (the editor's side panel and its optional permission), `monaco-editor`
   - `src/ui/` — `components`, `icons`, `scss`
   - `src/core/` — `css`, `stylesheets`, `saved-styles`, `types`, `settings`, `i18n`, `google-auth` (Google sign-in, shared by sync and the gallery), `utils`
   - `src/assets/` — `manifest` (base manifest, a module per browser that extends it, and the dev store keys), `icon` (the extension icon: SVG sources and the PNGs the build copies to `img/`), `fonts`, `_locales` (i18n strings per locale)
