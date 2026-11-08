@@ -43,7 +43,11 @@ jobs:
           node "$RUNNER_TEMP/bundle-size.mjs" measure dist > "$RUNNER_TEMP/head.json"
 
       # Built in the same directory as the PR so path-derived output matches.
+      # A base whose build script doesn't pass the legacy OpenSSL provider
+      # itself, such as v3's, needs it for webpack 4 on this Node.
       - name: Measure base
+        env:
+          NODE_OPTIONS: --openssl-legacy-provider
         run: |
           head_sha=$(git rev-parse HEAD)
           git checkout --force --detach HEAD^1
