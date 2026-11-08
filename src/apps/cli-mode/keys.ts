@@ -1,3 +1,5 @@
+import { isUserGesture } from '@stylebot/utils';
+
 import type { TerminalState } from './state';
 
 // What the keys do besides opening and closing the terminal. Clearing
@@ -55,7 +57,9 @@ export const runKey = (
 /**
  * Listens for the terminal's plain-key shortcuts, which work anywhere on
  * the page but its fields and the terminal's own, ahead of the page's own
- * listeners. Returns a function that stops listening.
+ * listeners. Only keys a person pressed count: a page can dispatch keydown
+ * events on itself, and Z reverts a saved change. Returns a function that
+ * stops listening.
  */
 export const listenForKeys = (
   state: TerminalState,
@@ -65,6 +69,7 @@ export const listenForKeys = (
   const onKey = (event: KeyboardEvent): void => {
     // A closed shadow root hides its fields from the event's path.
     if (
+      !isUserGesture(event) ||
       event.metaKey ||
       event.ctrlKey ||
       event.altKey ||

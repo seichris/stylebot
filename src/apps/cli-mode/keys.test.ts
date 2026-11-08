@@ -1,3 +1,11 @@
+// The browser marks the keys a person presses trusted; jsdom can't.
+jest.mock('@stylebot/utils', () => ({
+  ...jest.requireActual('@stylebot/utils'),
+  isUserGesture: jest.fn(() => true),
+}));
+
+import { isUserGesture } from '@stylebot/utils';
+
 import { type KeyActions, listenForKeys, runKey } from './keys';
 import { createTerminalState } from './state';
 
@@ -86,6 +94,25 @@ describe('listenForKeys', () => {
 
     press(document.body, { key: '.' });
     expect(state.expanded).toBe(true);
+  });
+
+  it('ignores keys the page dispatches itself, so it cannot undo a saved change', () => {
+    (isUserGesture as jest.Mock).mockImplementation(
+      jest.requireActual('@stylebot/utils').isUserGesture
+    );
+    const state = createTerminalState();
+    const keys = actions();
+    const stop = listenForKeys(state, keys, shadowRoot());
+
+    const undo = press(window, { key: 'z' });
+    const expand = press(document.body, { key: '.' });
+
+    expect(keys.undo).not.toHaveBeenCalled();
+    expect(state.expanded).toBe(false);
+    expect(undo.defaultPrevented).toBe(false);
+    expect(expand.defaultPrevented).toBe(false);
+    stop();
+    (isUserGesture as jest.Mock).mockImplementation(() => true);
   });
 
   it('skips keys typed in a field or with a modifier', () => {

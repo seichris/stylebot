@@ -67,12 +67,14 @@ import type {
   GalleryPublished,
   ResetGalleryProfileResponse,
 } from '@stylebot/types';
+import { isUserGesture } from '@stylebot/utils';
 
 import { getGalleryStyle } from '../../utils/gallery';
 
 /**
  * The profile's Gallery state under the editor: installed, edited since it
- * was installed, published, or with changes to publish.
+ * was installed, published, or with changes to publish. Publish and Revert
+ * only act on a person's click, never on one the page dispatches.
  */
 export default Vue.extend({
   name: 'TheGalleryStatus',
@@ -182,11 +184,17 @@ export default Vue.extend({
   },
 
   methods: {
-    publish(): void {
-      this.$store.dispatch('publishToGallery');
+    publish(event?: MouseEvent): void {
+      if (isUserGesture(event)) {
+        this.$store.dispatch('publishToGallery');
+      }
     },
 
-    async reset(): Promise<void> {
+    async reset(event?: MouseEvent): Promise<void> {
+      if (!isUserGesture(event)) {
+        return;
+      }
+
       this.resetting = true;
       this.resetError = '';
 

@@ -22,6 +22,7 @@ export {
   formatExact,
 } from './time-formatter';
 export { KEYBOARD_FOCUS, isFieldTarget, consumeFieldEscape } from './focus';
+export { isUserGesture } from './user-gesture';
 
 export { getCurrentTimestamp } from './timestamp';
 

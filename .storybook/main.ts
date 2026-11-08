@@ -85,6 +85,7 @@ const config: StorybookConfig = {
             find: /^\.\/(code\/)?CodeEditorIframe\.vue$/,
             replacement: mock('CodeEditorIframe.vue'),
           },
+          { find: /^\.\/user-gesture$/, replacement: mock('user-gesture.ts') },
           ...aliasedPackages.map(name => ({
             find: `@stylebot/${name}`,
             replacement: src(`${dirs[name]}/index`),

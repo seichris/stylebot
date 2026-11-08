@@ -29,7 +29,7 @@
             type="button"
             class="undo"
             :title="t('undo_the_last_save')"
-            @click="$emit('undo', lastUndoableSave(entry.steps).id)"
+            @click="undo($event, lastUndoableSave(entry.steps).id)"
           >
             {{ t('undo_bracketed') }}
           </button>
@@ -56,7 +56,7 @@
                 v-else
                 type="button"
                 class="undo"
-                @click="$emit('undo', step.id)"
+                @click="undo($event, step.id)"
               >
                 {{ t('undo_bracketed') }}
               </button>
@@ -96,6 +96,7 @@
 import type { PropType } from 'vue';
 import Vue from 'vue';
 import type { CliThreadEntry } from '@stylebot/types';
+import { isUserGesture } from '@stylebot/utils';
 
 import { formatElapsed } from '../elapsed';
 import { lastUndoableSave, summarizeTurn } from '../thread';
@@ -105,7 +106,8 @@ import CliSpinner from './CliSpinner.vue';
 /**
  * CLI mode's thread, as a terminal: the user's notes as prompts with the
  * agent's replies under them, and each turn of commands between them folded
- * into one line, opened to list each command and save. Emits `undo`.
+ * into one line, opened to list each command and save. Emits `undo` for a
+ * person's click only, since undoing reverts a saved change.
  */
 export default Vue.extend({
   name: 'CliThread',
@@ -195,6 +197,12 @@ export default Vue.extend({
       this.open = this.open.includes(id)
         ? this.open.filter(other => other !== id)
         : [...this.open, id];
+    },
+
+    undo(event: MouseEvent, id: number): void {
+      if (isUserGesture(event)) {
+        this.$emit('undo', id);
+      }
     },
   },
 });
