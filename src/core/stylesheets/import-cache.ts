@@ -8,13 +8,15 @@ const importCacheKey = (url: string) => `${IMPORT_CACHE_PREFIX}${url}`;
 type Prunes = { count: number; liveUrls: ReadonlySet<string> };
 
 // On the window Stylebot's scripts on the page share, since each bundles this
-// module and a fetch one starts can outlive a prune another runs.
+// module and a fetch one starts can outlive a prune another runs. Looked up
+// only when called: the background bundles this package too, and a service
+// worker has no window.
 type ImportCacheWindow = Window & { stylebotImportCachePrunes?: Prunes };
 
-const shared = window as ImportCacheWindow;
+const getShared = (): ImportCacheWindow => window as ImportCacheWindow;
 
 const getPrunes = (): Prunes =>
-  shared.stylebotImportCachePrunes ?? { count: 0, liveUrls: new Set() };
+  getShared().stylebotImportCachePrunes ?? { count: 0, liveUrls: new Set() };
 
 const readImportCache = (url: string): string | null => {
   try {
@@ -39,7 +41,7 @@ const writeImportCache = (url: string, css: string): void => {
  * the font files only those responses loaded.
  */
 export const pruneImportCache = (liveUrls: ReadonlySet<string>): void => {
-  shared.stylebotImportCachePrunes = {
+  getShared().stylebotImportCachePrunes = {
     count: getPrunes().count + 1,
     liveUrls: new Set(liveUrls),
   };
