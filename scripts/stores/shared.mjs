@@ -88,7 +88,11 @@ export const prepareUpload = envNames => {
     );
   }
 
-  requireEnv(['STYLEBOT_GOOGLE_CLIENT_SECRET', ...envNames]);
+  requireEnv([
+    'STYLEBOT_GOOGLE_CLIENT_ID',
+    'STYLEBOT_GOOGLE_CLIENT_SECRET',
+    ...envNames,
+  ]);
 
   const { version } = JSON.parse(
     readFileSync(path.join(rootDir, 'package.json'), 'utf8')

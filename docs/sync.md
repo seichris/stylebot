@@ -51,11 +51,11 @@ A Desktop client only accepts a loopback redirect, so the browser has to catch G
 - **Chrome, Edge and Safari** sign in in an ordinary tab. A redirect rule the extension adds for the sign-in sends the loopback address to an extension page, which hands the code to the background; it closes the tab and returns to the one the user started from. Where the rule can't run, such as with the extension's site access limited, the background reads the code off the tab's loopback address instead. The sign-in in progress is kept in storage rather than memory, since the background may unload while the user is on Google's page; whichever background receives the code finishes it, and a second sync brings the open sign-in tab forward instead of opening another.
 - **Firefox** signs in through its own auth window, which accepts a loopback address of its own and intercepts it, so it needs no redirect rule.
 
-Google treats a Desktop client's secret as public, since it ships inside the extension, but it is kept out of the repository: builds read it from `STYLEBOT_GOOGLE_CLIENT_SECRET`. A release build fails without it; CI and development builds only warn, and sign-in fails in them.
+Each build signs in as the Desktop client of whoever publishes it, which it takes from the environment rather than the repository: its id from `STYLEBOT_GOOGLE_CLIENT_ID` and its secret from `STYLEBOT_GOOGLE_CLIENT_SECRET`. Google treats a Desktop client's secret as public, since it ships inside the extension. A release build fails without either; CI and development builds only warn, and sign-in stops with an error before reaching Google in them.
 
 ### Profiles signed in before refresh tokens
 
-Chrome, Edge and Firefox used to sign in against a **Web application** client through the browser's identity API, which gives only hour-long tokens and renews them with a hidden sign-in that fails whenever Google wants a click. Until such a profile has a refresh token, scheduled runs still renew that way, so a sign-in that keeps working isn't interrupted; its next interactive sync moves it to the Desktop client. This fallback is meant to go once most profiles have moved.
+Chrome, Edge and Firefox used to sign in against a **Web application** client through the browser's identity API, which gives only hour-long tokens and renews them with a hidden sign-in that fails whenever Google wants a click. Until such a profile has a refresh token, scheduled runs still renew that way, so a sign-in that keeps working isn't interrupted; its next interactive sync moves it to the Desktop client. The build takes that client's id from `STYLEBOT_GOOGLE_WEB_CLIENT_ID`; a build without it skips the renewal, and such profiles sign in again on their next interactive sync. This fallback is meant to go once most profiles have moved.
 
 ## Using sync from a local build or a fork
 
@@ -65,6 +65,6 @@ A fork needs its own client:
 
 1. In the [Google Cloud console](https://cloud.google.com/cloud-console), create a project and enable the **Google Drive API**.
 2. Under **OAuth consent screen**, choose Internal (local use, or within an organisation) or External (a published fork), add the scope `https://www.googleapis.com/auth/drive.file`, and publish it: refresh tokens for a consent screen left in testing expire after a week.
-3. Under **Credentials**, create an **OAuth client ID** of type Desktop app. Replace the Desktop client ID in the sync code with it, and build with its secret in `STYLEBOT_GOOGLE_CLIENT_SECRET`.
+3. Under **Credentials**, create an **OAuth client ID** of type Desktop app, and build with its id in `STYLEBOT_GOOGLE_CLIENT_ID` and its secret in `STYLEBOT_GOOGLE_CLIENT_SECRET`. A fork has no profiles from before refresh tokens, so it leaves `STYLEBOT_GOOGLE_WEB_CLIENT_ID` unset.
 
 Drive only shows a client the files its own project created, so every client that reads the sync file has to be in the same project.

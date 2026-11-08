@@ -42,17 +42,36 @@ const galleryDefinitions = {
   'process.env.STYLEBOT_GALLERY_SITE_URL': devOnly('STYLEBOT_GALLERY_SITE_URL'),
 };
 
-// Drive sign-in can't exchange codes or refresh tokens without it, so a
-// release built without it would ship with sign-in broken. CI builds only test.
-if (!process.env.STYLEBOT_GOOGLE_CLIENT_SECRET) {
-  const message =
-    'STYLEBOT_GOOGLE_CLIENT_SECRET is not set; Google Drive sign-in will fail in this build.';
+// Google sign-in runs as the Desktop OAuth client of whoever publishes the
+// build, set in the environment rather than the repo, so a release built
+// without one would ship with sign-in broken. CI builds only test.
+const missingGoogleClient = [
+  'STYLEBOT_GOOGLE_CLIENT_ID',
+  'STYLEBOT_GOOGLE_CLIENT_SECRET',
+].filter(name => !process.env[name]);
+
+if (missingGoogleClient.length) {
+  const message = `${missingGoogleClient.join(
+    ' and '
+  )} not set; Google sign-in will fail in this build.`;
 
   if (process.env.NODE_ENV === 'production' && !process.env.CI) {
     throw new Error(message);
   }
   console.warn(`Warning: ${message}`);
 }
+
+// Client ids are public, so any bundle may carry them; the secret stays in
+// the background's. The web client only renews tokens from before refresh
+// tokens, so a build without one just skips that.
+const googleClientDefinitions = {
+  'process.env.STYLEBOT_GOOGLE_CLIENT_ID': JSON.stringify(
+    process.env.STYLEBOT_GOOGLE_CLIENT_ID ?? ''
+  ),
+  'process.env.STYLEBOT_GOOGLE_WEB_CLIENT_ID': JSON.stringify(
+    process.env.STYLEBOT_GOOGLE_WEB_CLIENT_ID ?? ''
+  ),
+};
 
 // The build's UTC time as YYYYMMDDHHMM, so each Safari build gets a higher number.
 const safariBuildNumber = new Date()
@@ -378,6 +397,7 @@ const backgroundPageConfig = {
       global: 'this',
       ...cliDefinitions,
       ...galleryDefinitions,
+      ...googleClientDefinitions,
       // Google sign-in's Desktop client secret, kept out of the repo.
       'process.env.STYLEBOT_GOOGLE_CLIENT_SECRET': JSON.stringify(
         process.env.STYLEBOT_GOOGLE_CLIENT_SECRET ?? ''
@@ -419,6 +439,7 @@ const clientConfig = {
       global: 'globalThis',
       ...cliDefinitions,
       ...galleryDefinitions,
+      ...googleClientDefinitions,
     }),
   ],
 };

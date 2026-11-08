@@ -1,11 +1,23 @@
 import { googleAuthError, isUnavailable } from './errors';
 
-export const DESKTOP_CLIENT_ID =
-  '662998053209-uqalajpc4ei0nvdk164lmul35nbeocas.apps.googleusercontent.com';
-
-// Set at build time so it stays out of the repo; Google treats a Desktop
-// client's secret as public, since it ships in every copy of the extension.
+// Both set at build time, for the Google client of whoever publishes the
+// build, so no build signs in as another publisher's client. Google treats a
+// Desktop client's secret as public, since it ships in every copy.
+export const DESKTOP_CLIENT_ID = process.env.STYLEBOT_GOOGLE_CLIENT_ID ?? '';
 const DESKTOP_CLIENT_SECRET = process.env.STYLEBOT_GOOGLE_CLIENT_SECRET ?? '';
+
+/**
+ * Stops a sign-in before it reaches Google when the build has no client to
+ * sign in as, rather than sending the user to Google's error page.
+ */
+const assertClientConfigured = (): void => {
+  if (!DESKTOP_CLIENT_ID) {
+    throw googleAuthError(
+      'Google sign-in is not set up in this build',
+      'sign-in'
+    );
+  }
+};
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
@@ -38,6 +50,8 @@ const getCodeChallenge = async (verifier: string): Promise<string> =>
 export const requestToken = async (
   params: Record<string, string>
 ): Promise<TokenResponse> => {
+  assertClientConfigured();
+
   const response = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -120,6 +134,8 @@ export const getAuthURL = async ({
   state: string;
   loginHint?: string;
 }): Promise<string> => {
+  assertClientConfigured();
+
   const authURL = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authURL.search = new URLSearchParams({
     client_id: DESKTOP_CLIENT_ID,

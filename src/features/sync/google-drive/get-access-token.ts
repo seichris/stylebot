@@ -19,8 +19,9 @@ const DRIVE_ACCESS: GoogleAccess = {
   getLoginHint: getSyncAccountEmail,
 };
 
-const WEB_CLIENT_ID =
-  '662998053209-s49tq55ic3td87m08gi8vpjqm5t7r9st.apps.googleusercontent.com';
+// The web client profiles signed in to before refresh tokens. Set at build
+// time, like the Desktop client; a build without one skips its renewal.
+const WEB_CLIENT_ID = process.env.STYLEBOT_GOOGLE_WEB_CLIENT_ID ?? '';
 
 export const clearCachedToken = (): Promise<void> =>
   clearGoogleToken(DRIVE_ACCESS);
@@ -130,7 +131,10 @@ export default async (
   }
 
   // Safari has no identity API.
-  if (typeof chrome.identity?.launchWebAuthFlow === 'function') {
+  if (
+    WEB_CLIENT_ID &&
+    typeof chrome.identity?.launchWebAuthFlow === 'function'
+  ) {
     return renewWebClientToken();
   }
 

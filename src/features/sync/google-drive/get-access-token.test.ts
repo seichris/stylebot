@@ -10,11 +10,9 @@ jest.mock('@stylebot/google-auth', () => ({
   signInToGoogle: jest.fn(),
 }));
 
-const DESKTOP_CLIENT_ID =
-  '662998053209-uqalajpc4ei0nvdk164lmul35nbeocas.apps.googleusercontent.com';
-
-const WEB_CLIENT_ID =
-  '662998053209-s49tq55ic3td87m08gi8vpjqm5t7r9st.apps.googleusercontent.com';
+// The made-up clients jest/setup.js builds the tests with.
+const DESKTOP_CLIENT_ID = process.env.STYLEBOT_GOOGLE_CLIENT_ID;
+const WEB_CLIENT_ID = process.env.STYLEBOT_GOOGLE_WEB_CLIENT_ID;
 
 const CACHE_KEY = 'google-drive-access-token';
 const REFRESH_TOKEN_KEY = 'google-drive-refresh-token';
@@ -192,6 +190,23 @@ describe('getAccessToken', () => {
     expect(launchWebAuthFlow).toBeCalledTimes(1);
     expect(interactiveFlows()).toHaveLength(0);
     expect(signInToGoogle).not.toBeCalled();
+  });
+
+  it('asks for a sign-in instead, without opening anything, in a build with no web client', async () => {
+    const saved = process.env.STYLEBOT_GOOGLE_WEB_CLIENT_ID;
+    let withoutWebClient: typeof getAccessToken = getAccessToken;
+
+    delete process.env.STYLEBOT_GOOGLE_WEB_CLIENT_ID;
+    jest.isolateModules(() => {
+      withoutWebClient = require('./get-access-token').default;
+    });
+    process.env.STYLEBOT_GOOGLE_WEB_CLIENT_ID = saved;
+
+    const error = await withoutWebClient({ interactive: false }).catch(e => e);
+
+    expect(isSyncError(error)).toBe(true);
+    expect(error.code).toBe('sign-in');
+    expect(launchWebAuthFlow).not.toBeCalled();
   });
 
   it('names the account the last sync ran as to the silent fallback', async () => {

@@ -392,7 +392,7 @@ Windows has no Unix sockets, so there each host listens on a named pipe for your
 
 ### Where browsers find the host
 
-Browsers find the host through a manifest that names its launcher and allows Stylebot's Chrome Web Store and Edge Add-ons ids. On macOS and Linux the manifest goes in a `NativeMessagingHosts` folder in the browser's user data folder, and the dev profiles get their own. On Windows one manifest in `~/.stylebot/` is registered under a `NativeMessagingHosts` key in `HKCU\Software`.
+Browsers find the host through a manifest that names its launcher and allows Stylebot's Chrome Web Store and Edge Add-ons ids, `EXTENSION_IDS` in `tools/cli/lib/register.mjs`. Development and preview builds get the Chrome Web Store id from the store's public key they carry; a build published under other ids, such as a fork's, can't connect until its ids are there, and its CLI is published with them. On macOS and Linux the manifest goes in a `NativeMessagingHosts` folder in the browser's user data folder, and the dev profiles get their own. On Windows one manifest in `~/.stylebot/` is registered under a `NativeMessagingHosts` key in `HKCU\Software`.
 
 #### Chrome
 

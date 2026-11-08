@@ -22,3 +22,10 @@ if (!globalThis.TextDecoder) {
 fetchMock.enableMocks();
 VueTestUtils.config.mocks['t'] = msg => msg;
 VueTestUtils.config.stubs = { 'b-row': true };
+
+// Builds take their Google clients from the environment; tests sign in as
+// made-up ones.
+process.env.STYLEBOT_GOOGLE_CLIENT_ID ??=
+  'stylebot-tests.apps.googleusercontent.com';
+process.env.STYLEBOT_GOOGLE_WEB_CLIENT_ID ??=
+  'stylebot-tests-web.apps.googleusercontent.com';

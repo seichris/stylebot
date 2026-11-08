@@ -46,7 +46,7 @@ function run(command, args, options = {}) {
 /**
  * The build steps AMO reviewers follow to rebuild the extension from source.
  */
-function getBuildInstructions(version, clientSecret) {
+function getBuildInstructions(version, { clientId, clientSecret }) {
   const nodeVersion = readFileSync(path.join(root, '.nvmrc'), 'utf8').trim();
 
   return `# Building Stylebot ${version} for Firefox
@@ -54,13 +54,13 @@ function getBuildInstructions(version, clientSecret) {
 Requirements: Node.js ${nodeVersion} and Yarn 1 (classic). Any OS with a POSIX shell.
 
 1. \`yarn install --frozen-lockfile\`
-2. \`STYLEBOT_GOOGLE_CLIENT_SECRET=${clientSecret} yarn build:firefox\`
+2. \`STYLEBOT_GOOGLE_CLIENT_ID=${clientId} STYLEBOT_GOOGLE_CLIENT_SECRET=${clientSecret} yarn build:firefox\`
 
 The built extension is written to \`firefox-dist/\`, which matches the uploaded
-package. The variable is the secret of Stylebot's Google sign-in client for
-installed apps, which Google treats as public since it ships in the package;
-it's kept out of the repository only. No network access beyond the npm
-registry is needed.
+package. The variables are the id and secret of Stylebot's Google sign-in
+client for installed apps, which Google treats as public since they ship in
+the package; they're kept out of the repository only. No network access
+beyond the npm registry is needed.
 
 ## Notes for reviewers
 
@@ -91,12 +91,13 @@ if (status.trim()) {
   process.exit(1);
 }
 
+const clientId = process.env.STYLEBOT_GOOGLE_CLIENT_ID;
 const clientSecret = process.env.STYLEBOT_GOOGLE_CLIENT_SECRET;
 
-if (!clientSecret) {
+if (!clientId || !clientSecret) {
   console.error(
-    'Set STYLEBOT_GOOGLE_CLIENT_SECRET to the Desktop OAuth client secret; ' +
-      'Google Drive sign-in needs it.'
+    'Set STYLEBOT_GOOGLE_CLIENT_ID and STYLEBOT_GOOGLE_CLIENT_SECRET to the ' +
+      'Desktop OAuth client id and secret; Google sign-in needs them.'
   );
   process.exit(1);
 }
@@ -137,10 +138,10 @@ run('zip', ['-r', '-X', '-q', extensionZip, '.', '-x', '.build-complete'], {
 run('git', [
   'archive',
   '--format=zip',
-  `--add-virtual-file=AMO-BUILD.md:${getBuildInstructions(
-    version,
-    clientSecret
-  )}`,
+  `--add-virtual-file=AMO-BUILD.md:${getBuildInstructions(version, {
+    clientId,
+    clientSecret,
+  })}`,
   '-o',
   sourceZip,
   'HEAD',

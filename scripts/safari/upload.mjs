@@ -15,10 +15,13 @@ if (process.platform !== 'darwin') {
   process.exit(1);
 }
 
-if (!process.env.STYLEBOT_GOOGLE_CLIENT_SECRET) {
+if (
+  !process.env.STYLEBOT_GOOGLE_CLIENT_ID ||
+  !process.env.STYLEBOT_GOOGLE_CLIENT_SECRET
+) {
   console.error(
-    'Set STYLEBOT_GOOGLE_CLIENT_SECRET to the Desktop OAuth client secret; ' +
-      'Drive sign-in needs it.'
+    'Set STYLEBOT_GOOGLE_CLIENT_ID and STYLEBOT_GOOGLE_CLIENT_SECRET to the ' +
+      'Desktop OAuth client id and secret; Google sign-in needs them.'
   );
   process.exit(1);
 }
