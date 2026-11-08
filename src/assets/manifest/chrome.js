@@ -27,6 +27,8 @@ module.exports = {
         'cli-inspector/index.js',
         'cli-mode/index.js',
         'cli-mode/index.css',
+        // Framed in the page, so it has to be; its own files load from it.
+        'cli-mode/note/index.html',
       ],
       matches: ['<all_urls>'],
     },

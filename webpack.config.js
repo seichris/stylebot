@@ -295,6 +295,14 @@ const config = {
           from: '../node_modules/requirejs/require.js',
           to: 'monaco-editor/iframe/node_modules/requirejs/require.js',
         },
+        ...(isCLISupported
+          ? [
+              {
+                from: 'apps/cli-mode/note/index.html',
+                to: 'cli-mode/note/index.html',
+              },
+            ]
+          : []),
         {
           from: 'assets/_locales/*.config',
           to: '_locales/[name]/messages.json',
@@ -394,10 +402,12 @@ const clientConfig = {
     'monaco-editor/iframe/options-index':
       './apps/monaco-iframe/options-index.ts',
     'readability/reader': './apps/reader/reader.ts',
-    // The CLI's page inspector and CLI mode's bar, loaded on demand.
+    // The CLI's page inspector and CLI mode's bar, loaded on demand, and the
+    // note field the bar frames.
     ...(isCLISupported && {
       'cli-inspector/index': './apps/cli-inspector/index.ts',
       'cli-mode/index': './apps/cli-mode/index.ts',
+      'cli-mode/note/index': './apps/cli-mode/note/index.ts',
     }),
   },
   // Webpack's `global` shim falls back to `new Function` in the bundles loaded

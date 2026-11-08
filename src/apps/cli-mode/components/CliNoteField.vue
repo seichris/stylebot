@@ -1,20 +1,13 @@
 <template>
-  <label class="note-field">
-    <span class="sigil">›</span>
-    <textarea
-      ref="field"
-      v-model="draft"
-      class="field"
-      rows="1"
-      :aria-label="t('note_to_your_agent')"
+  <div class="note-field">
+    <span class="sigil" @mousedown.prevent="focus">›</span>
+    <cli-note-frame
+      ref="frame"
+      :label="t('note_to_your_agent')"
       :placeholder="placeholder"
-      @input="fit"
-      @keydown="onKeydown"
-      @keyup.stop
-      @keypress.stop
-    ></textarea>
-    <span v-if="draft.trim()" class="enter" aria-hidden="true">⏎</span>
-  </label>
+      @note="$emit('note', $event)"
+    />
+  </div>
 </template>
 
 <script lang="ts">
@@ -22,27 +15,25 @@ import type { PropType } from 'vue';
 import Vue from 'vue';
 
 import type { PageMark } from '../state';
-
-const MAX_HEIGHT = 120;
+import CliNoteFrame from './CliNoteFrame.vue';
 
 /**
  * Where the user writes a note to the agent about the marks on the page,
  * as a terminal prompt. Enter sends, Shift+Enter starts a new line, Esc
- * hands the keyboard back to the page. Keys typed here stay here. Emits
- * `note` with the text.
+ * hands the keyboard back to the page. The field is framed from the
+ * extension (see CliNoteFrame), so the page never gets the keys typed in it.
+ * Emits `note` with the text.
  */
 export default Vue.extend({
   name: 'CliNoteField',
+
+  components: { CliNoteFrame },
 
   props: {
     marks: {
       type: Array as PropType<Array<PageMark>>,
       required: true,
     },
-  },
-
-  data() {
-    return { draft: '' };
   },
 
   computed: {
@@ -59,42 +50,7 @@ export default Vue.extend({
 
   methods: {
     focus(): void {
-      (this.$refs.field as HTMLTextAreaElement | undefined)?.focus();
-    },
-
-    fit(): void {
-      const field = this.$refs.field as HTMLTextAreaElement;
-
-      field.style.height = 'auto';
-      field.style.height = `${Math.min(field.scrollHeight, MAX_HEIGHT)}px`;
-    },
-
-    onKeydown(event: KeyboardEvent): void {
-      event.stopPropagation();
-
-      if (event.key === 'Escape') {
-        (event.target as HTMLElement).blur();
-      } else if (
-        event.key === 'Enter' &&
-        !event.shiftKey &&
-        !event.isComposing
-      ) {
-        event.preventDefault();
-        this.send();
-      }
-    },
-
-    async send(): Promise<void> {
-      const text = this.draft.trim();
-
-      if (!text) {
-        return;
-      }
-
-      this.$emit('note', text);
-      this.draft = '';
-      await this.$nextTick();
-      this.fit();
+      (this.$refs.frame as (Vue & { focus: () => void }) | undefined)?.focus();
     },
   },
 });
@@ -115,29 +71,5 @@ export default Vue.extend({
   text-align: center;
   color: var(--term-accent);
   font-weight: 600;
-}
-
-.field {
-  flex: 1;
-  min-width: 0;
-  max-height: 120px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  outline: none;
-  background: none;
-  caret-color: var(--term-accent);
-  color: var(--term-bright);
-  font: inherit;
-  resize: none;
-
-  &::placeholder {
-    color: var(--term-faint);
-  }
-}
-
-.enter {
-  flex: none;
-  color: var(--term-faint);
 }
 </style>
