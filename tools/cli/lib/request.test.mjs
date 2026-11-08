@@ -14,7 +14,7 @@ jest.mock('./socket.mjs', () => ({
 jest.mock('./style.mjs', () => ({ isStyled: () => false, linkify: s => s }));
 
 const { sendToHost } = require('./socket.mjs');
-const { request } = require('./request.mjs');
+const { createPrinter, request } = require('./request.mjs');
 
 let onExit;
 const argv = process.argv;
@@ -105,5 +105,29 @@ describe('request', () => {
     await request('tabs');
 
     expect(onExit).toBeUndefined();
+  });
+});
+
+describe('createPrinter', () => {
+  const printer = json => createPrinter({ opts: () => ({ json }) });
+
+  it("prints a page's outline as laid out, without the terminal controls the page put in it", () => {
+    const outline =
+      'body\n  h1 "Title \x1b]8;;https://elsewhere.example\x1b\\here\x1b]8;;\x1b\\"\n  p "ok\rFAILED"';
+
+    printer(false)(outline, text => text);
+
+    expect(console.log).toBeCalledWith(
+      'body\n  h1 "Title ]8;;https://elsewhere.example\\here]8;;\\"\n  p "ok\nFAILED"'
+    );
+  });
+
+  it('leaves --json output to JSON, which escapes control characters', () => {
+    printer(true)({ outline: 'a \x1b[2J' }, () => 'unused');
+
+    expect(console.log).toBeCalledWith(
+      JSON.stringify({ outline: 'a \x1b[2J' }, null, 2)
+    );
+    expect(console.log.mock.calls[0][0]).toContain('\\u001b[2J');
   });
 });

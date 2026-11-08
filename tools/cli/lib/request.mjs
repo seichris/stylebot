@@ -4,6 +4,7 @@ import { sendToHost } from './socket.mjs';
 import { prepareHost } from './install.mjs';
 import { incompatibility, unsupportedFeature } from './protocol.mjs';
 import { isStyled, linkify } from './style.mjs';
+import { stripTerminalControls } from './terminal-text.mjs';
 
 export const fail = message => {
   console.error(
@@ -65,9 +66,13 @@ export const request = async (command, args = {}, onEvent = undefined) => {
 };
 
 /**
- * Prints a command's result through its formatter, or as JSON with --json.
+ * Prints a command's result through its formatter, or as JSON with --json,
+ * which escapes control characters itself. Formatted results carry page
+ * text, such as an outline's, so their control characters are dropped.
  */
 export const createPrinter = program => (result, format) =>
   console.log(
-    program.opts().json ? JSON.stringify(result, null, 2) : format(result)
+    program.opts().json
+      ? JSON.stringify(result, null, 2)
+      : stripTerminalControls(format(result))
   );
