@@ -11,6 +11,7 @@
 
 <script lang="ts">
 import Vue from 'vue';
+import { getExtensionOrigin } from '@stylebot/utils';
 
 import {
   NOTE_FIELD_HEIGHT,
@@ -84,7 +85,6 @@ export default Vue.extend({
     connect(): void {
       const frame = this.$refs.frame as HTMLIFrameElement;
       const { port1, port2 } = new MessageChannel();
-      const { protocol, host } = new URL(chrome.runtime.getURL(''));
       const handshake: NoteFrameHandshake = {
         type: NOTE_FRAME_HANDSHAKE,
         token: this.token,
@@ -95,7 +95,7 @@ export default Vue.extend({
       this.ready = false;
       port1.onmessage = ({ data }: MessageEvent<FromNoteFrame>) =>
         this.receive(data);
-      frame.contentWindow?.postMessage(handshake, `${protocol}//${host}`, [
+      frame.contentWindow?.postMessage(handshake, getExtensionOrigin(), [
         port2,
       ]);
     },

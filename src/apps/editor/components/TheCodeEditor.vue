@@ -18,7 +18,7 @@ import type {
   ParentFocusEditorMessage,
 } from '@stylebot/monaco-editor';
 import type { Debounced } from '@stylebot/utils';
-import { debounce } from '@stylebot/utils';
+import { debounce, isFromExtensionFrame } from '@stylebot/utils';
 
 import CodeEditorIframe from './code/CodeEditorIframe.vue';
 
@@ -160,17 +160,27 @@ export default Vue.extend({
       }
     },
 
-    handleMessage(message: {
-      source: Window | MessagePort | ServiceWorker | null;
-      data: IframeMessage;
-    }): void {
-      switch (message.data.type) {
+    /**
+     * Takes messages only from this editor's own Monaco frame: in the page,
+     * any script there can post to the window this listens on, and css it
+     * sent would be saved as the user's.
+     */
+    handleMessage(event: MessageEvent<IframeMessage>): void {
+      if (!isFromExtensionFrame(event, this.getIframeContentWindow())) {
+        return;
+      }
+
+      const message = event.data;
+
+      switch (message.type) {
         case 'stylebotMonacoIframeLoaded':
           this.handleIframeLoaded();
           break;
 
         case 'stylebotMonacoIframeCssUpdated':
-          this.handleIframeCssUpdate(message.data.css);
+          if (typeof message.css === 'string') {
+            this.handleIframeCssUpdate(message.css);
+          }
           break;
 
         case 'stylebotEscapePressed':

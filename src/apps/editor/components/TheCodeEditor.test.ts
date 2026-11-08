@@ -22,12 +22,36 @@ const buildMockStore = (css = '') => {
   return { state, dispatch };
 };
 
-const type = (css: string) =>
-  window.dispatchEvent(
-    new MessageEvent('message', {
-      data: { type: 'stylebotMonacoIframeCssUpdated', css },
-    })
-  );
+const EXTENSION_ORIGIN = 'chrome-extension://stylebot';
+
+// The window of the mounted editor's Monaco frame.
+let frameWindow: Window | null = null;
+
+/**
+ * Posts a message to the window the editor listens on, from its Monaco
+ * frame unless told otherwise.
+ */
+const post = (
+  data: unknown,
+  {
+    source = frameWindow,
+    origin = EXTENSION_ORIGIN,
+  }: { source?: Window | null; origin?: string } = {}
+) =>
+  window.dispatchEvent(new MessageEvent('message', { data, source, origin }));
+
+const type = (css: unknown) =>
+  post({ type: 'stylebotMonacoIframeCssUpdated', css });
+
+/**
+ * A connected element to mount over, so the editor's iframe gets a window:
+ * mounting over document.body itself would replace it for later tests.
+ */
+const mountPoint = (): HTMLElement => {
+  const el = document.createElement('div');
+  document.documentElement.append(el);
+  return el;
+};
 
 const applyCssCalls = (store: ReturnType<typeof buildMockStore>) =>
   store.dispatch.mock.calls.filter(([action]) => action === 'applyCss');
@@ -39,15 +63,17 @@ describe('TheCodeEditor.vue', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     (global as unknown as { chrome: unknown }).chrome = {
-      runtime: { getURL: (path: string) => path },
+      runtime: { getURL: (path: string) => `${EXTENSION_ORIGIN}/${path}` },
     };
 
     store = buildMockStore('a { color: red; }');
     wrapper = mount(TheCodeEditor, {
       mocks: { $store: store },
       stubs: { CodeEditorIframe: CodeEditorIframeStub },
-      attachTo: document.body,
+      attachTo: mountPoint(),
     });
+    frameWindow = (wrapper.find('iframe').element as HTMLIFrameElement)
+      .contentWindow;
   });
 
   afterEach(() => {
@@ -130,5 +156,40 @@ describe('TheCodeEditor.vue', () => {
     expect(applyCssCalls(store)).toEqual([
       ['applyCss', { css: 'a { color: blue; }', source: 'code' }],
     ]);
+  });
+
+  describe('messages from anywhere but its Monaco frame', () => {
+    const typed = { type: 'stylebotMonacoIframeCssUpdated', css: 'b {}' };
+
+    it('ignores css a script posts to the window it listens on, as the page it sits on can', () => {
+      post(typed, { source: window, origin: 'https://example.com' });
+      jest.advanceTimersByTime(200);
+
+      expect(applyCssCalls(store)).toHaveLength(0);
+    });
+
+    it('ignores css from its frame window with another origin', () => {
+      post(typed, { origin: 'https://example.com' });
+      jest.advanceTimersByTime(200);
+
+      expect(applyCssCalls(store)).toHaveLength(0);
+    });
+
+    it('ignores css that is not text, and a message with no data', () => {
+      type({ toString: () => 'b {}' });
+      post(null);
+      jest.advanceTimersByTime(200);
+
+      expect(applyCssCalls(store)).toHaveLength(0);
+    });
+
+    it('ignores Escape a script posts, which would close the code view', () => {
+      post(
+        { type: 'stylebotEscapePressed' },
+        { source: window, origin: 'https://example.com' }
+      );
+
+      expect(wrapper?.emitted('leave')).toBeUndefined();
+    });
   });
 });

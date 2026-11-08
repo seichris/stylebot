@@ -9,6 +9,7 @@ import type {
   IframeMessage,
   ParentUpdateCssMessage,
 } from '@stylebot/monaco-editor';
+import { isFromExtensionFrame } from '@stylebot/utils';
 
 import CodeEditorIframe from './CodeEditorIframe.vue';
 
@@ -46,17 +47,26 @@ export default Vue.extend({
       return this.$el.querySelector('iframe')?.contentWindow;
     },
 
-    handleMessage(message: {
-      source: Window | MessagePort | ServiceWorker | null;
-      data: IframeMessage;
-    }): void {
-      switch (message.data.type) {
+    /**
+     * Takes messages only from this editor's own Monaco frame, so no other
+     * window can put css in the style being edited.
+     */
+    handleMessage(event: MessageEvent<IframeMessage>): void {
+      if (!isFromExtensionFrame(event, this.getIframeContentWindow())) {
+        return;
+      }
+
+      const message = event.data;
+
+      switch (message.type) {
         case 'stylebotMonacoIframeLoaded':
           this.handleIframeLoaded();
           break;
 
         case 'stylebotMonacoIframeCssUpdated':
-          this.handleIframeCssUpdate(message.data.css);
+          if (typeof message.css === 'string') {
+            this.handleIframeCssUpdate(message.css);
+          }
           break;
 
         case 'stylebotSavePressed':

@@ -2,7 +2,7 @@
 import CustomLight from './themes/CustomLight';
 import CustomDark from './themes/CustomDark';
 import type { IframeMessage, ParentMessage } from '@stylebot/monaco-editor';
-import { isSaveShortcut } from '@stylebot/utils';
+import { getExtensionOrigin, isSaveShortcut } from '@stylebot/utils';
 
 declare global {
   // Must stay an interface: augmenting Window relies on declaration merging.
@@ -14,6 +14,22 @@ declare global {
 }
 
 export type MonacoEditorVariant = 'default' | 'options';
+
+/**
+ * Whether a message came from the page or panel that frames the editor, not
+ * from another window that holds a reference to this one. In the in-page
+ * editor that parent is the page itself, so there this can't tell the page's
+ * own scripts from Stylebot's.
+ */
+const isFromParent = (
+  event: MessageEvent<unknown>
+): event is MessageEvent<ParentMessage> =>
+  event.source === window.parent &&
+  typeof event.data === 'object' &&
+  event.data !== null;
+
+const isTheme = (theme: unknown): theme is 'light' | 'dark' =>
+  theme === 'light' || theme === 'dark';
 
 class MonacEditorIframe {
   // todo: import monaco types
@@ -35,9 +51,13 @@ class MonacEditorIframe {
     this.variant = variant;
 
     this.patchBlobWorkerLoading();
-    window.addEventListener('message', (message: { data: ParentMessage }) => {
-      if (message.data.type === 'stylebotThemeUpdate') {
-        this.setTheme(message.data.theme);
+    window.addEventListener('message', (event: MessageEvent<unknown>) => {
+      if (
+        isFromParent(event) &&
+        event.data.type === 'stylebotThemeUpdate' &&
+        isTheme(event.data.theme)
+      ) {
+        this.setTheme(event.data.theme);
       }
     });
     this.loadEditor(() => {
@@ -237,8 +257,16 @@ class MonacEditorIframe {
     };
   }
 
+  /**
+   * Tells the frame's parent. The options page is always the extension's own;
+   * the editor's frame can sit in any page, which shares the window Stylebot
+   * listens on there anyway, as well as in the editor's window or side panel.
+   */
   postMessage(message: IframeMessage): void {
-    window.parent.postMessage(message, '*');
+    window.parent.postMessage(
+      message,
+      this.variant === 'options' ? getExtensionOrigin() : '*'
+    );
   }
 
   /**
@@ -310,14 +338,26 @@ class MonacEditorIframe {
       }
     });
 
-    window.addEventListener('message', (message: { data: ParentMessage }) => {
-      if (message.data.type === 'stylebotCssUpdate') {
+    window.addEventListener('message', (event: MessageEvent<unknown>) => {
+      if (!isFromParent(event)) {
+        return;
+      }
+
+      const message = event.data;
+
+      if (
+        message.type === 'stylebotCssUpdate' &&
+        typeof message.css === 'string' &&
+        (message.selector === undefined ||
+          typeof message.selector === 'string') &&
+        (message.focus === undefined || typeof message.focus === 'boolean')
+      ) {
         this.handleStylebotCssUpdate(
-          message.data.css,
-          message.data.selector,
-          message.data.focus ?? true
+          message.css,
+          message.selector,
+          message.focus ?? true
         );
-      } else if (message.data.type === 'stylebotFocusEditor') {
+      } else if (message.type === 'stylebotFocusEditor') {
         this.editor.focus();
       }
     });

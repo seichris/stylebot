@@ -23,6 +23,7 @@ export {
 } from './time-formatter';
 export { KEYBOARD_FOCUS, isFieldTarget, consumeFieldEscape } from './focus';
 export { isUserGesture } from './user-gesture';
+export { getExtensionOrigin, isFromExtensionFrame } from './extension-frame';
 
 export { getCurrentTimestamp } from './timestamp';
 

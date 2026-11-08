@@ -11,7 +11,12 @@ import type {
   IframeMessage,
   ParentThemeUpdateMessage,
 } from '@stylebot/monaco-editor';
-import { resolveAppearance, getSystemPreference } from '@stylebot/utils';
+import {
+  getExtensionOrigin,
+  getSystemPreference,
+  isFromExtensionFrame,
+  resolveAppearance,
+} from '@stylebot/utils';
 import type { StylebotAppearance } from '@stylebot/types';
 
 export default Vue.extend({
@@ -76,12 +81,19 @@ export default Vue.extend({
     },
 
     // Monaco loads asynchronously — fade the iframe in once it's ready.
-    handleMessage(message: { data: IframeMessage }): void {
-      if (message.data.type === 'stylebotMonacoIframeLoaded') {
+    handleMessage(event: MessageEvent<IframeMessage>): void {
+      const frame = (this.$refs.iframe as HTMLIFrameElement | undefined)
+        ?.contentWindow;
+
+      if (!isFromExtensionFrame(event, frame)) {
+        return;
+      }
+
+      if (event.data.type === 'stylebotMonacoIframeLoaded') {
         this.ready = true;
         // Covers a theme change that happened while the iframe was still loading.
         this.postTheme(this.resolvedTheme);
-      } else if (message.data.type === 'stylebotEscapePressed') {
+      } else if (event.data.type === 'stylebotEscapePressed') {
         // Tab indents inside Monaco, so Escape steps just past it instead.
         (this.$refs.exit as HTMLElement).focus();
       }
@@ -94,7 +106,7 @@ export default Vue.extend({
       };
       (this.$refs.iframe as HTMLIFrameElement).contentWindow?.postMessage(
         message,
-        '*'
+        getExtensionOrigin()
       );
     },
   },

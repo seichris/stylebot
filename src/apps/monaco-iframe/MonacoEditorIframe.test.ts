@@ -36,12 +36,24 @@ const createFakeEditor = () => {
   };
 };
 
-const sendCss = (css: string) =>
-  window.dispatchEvent(
-    new MessageEvent('message', {
-      data: { type: 'stylebotCssUpdate', css, focus: false },
-    })
-  );
+/**
+ * Posts to the editor's window, from its parent unless told otherwise: the
+ * page or panel it's framed in. A top-level jsdom window is its own parent.
+ */
+const post = (data: unknown, source: Window | null = window.parent) =>
+  window.dispatchEvent(new MessageEvent('message', { data, source }));
+
+const sendCss = (css: unknown) =>
+  post({ type: 'stylebotCssUpdate', css, focus: false });
+
+/**
+ * Another window that holds a reference to the editor's, such as a frame.
+ */
+const otherWindow = (): Window => {
+  const frame = document.createElement('iframe');
+  document.body.append(frame);
+  return frame.contentWindow as Window;
+};
 
 describe('MonacoEditorIframe', () => {
   let fake: ReturnType<typeof createFakeEditor>;
@@ -53,7 +65,9 @@ describe('MonacoEditorIframe', () => {
     document.body.innerHTML = '<div id="container"></div>';
 
     (global as unknown as { chrome: unknown }).chrome = {
-      runtime: { getURL: (path: string) => path },
+      runtime: {
+        getURL: (path: string) => `chrome-extension://stylebot/${path}`,
+      },
     };
     (global as unknown as { ResizeObserver: unknown }).ResizeObserver = class {
       observe() {
@@ -104,6 +118,29 @@ describe('MonacoEditorIframe', () => {
     expect(cssUpdates()).toEqual([]);
   });
 
+  it('takes css only from its parent, and only as text', () => {
+    sendCss('a { color: red; }');
+    post(
+      { type: 'stylebotCssUpdate', css: 'b { color: blue; }' },
+      otherWindow()
+    );
+    sendCss({ toString: () => 'c {}' });
+    post(null);
+
+    expect(fake.editor.getValue()).toBe('a { color: red; }');
+  });
+
+  it('takes a theme only from its parent, and only light or dark', () => {
+    const { setTheme } = window.monaco.editor;
+
+    post({ type: 'stylebotThemeUpdate', theme: 'dark' }, otherWindow());
+    post({ type: 'stylebotThemeUpdate', theme: 'neon' });
+    expect(setTheme).not.toHaveBeenCalled();
+
+    post({ type: 'stylebotThemeUpdate', theme: 'dark' });
+    expect(setTheme).toHaveBeenCalled();
+  });
+
   it('reports what the user types', () => {
     sendCss('a { color: red; }');
     fake.type('a { color: blue; }');
@@ -142,5 +179,25 @@ describe('MonacoEditorIframe', () => {
       expect(saves()).toEqual([{ type: 'stylebotSavePressed' }]);
       expect(event.defaultPrevented).toBe(true);
     });
+  });
+
+  // Last, like the save shortcut's: an editor never stops listening, and one
+  // for the options page would answer the keys of the tests after it.
+  it('posts to any parent from the in-page editor, and only to the extension from the options page', () => {
+    const postMessage = window.parent.postMessage as jest.Mock;
+
+    expect(postMessage).toHaveBeenCalledWith(
+      { type: 'stylebotMonacoIframeLoaded' },
+      '*'
+    );
+
+    fake = createFakeEditor();
+    postMessage.mockClear();
+    new MonacoEditorIframe('options');
+
+    expect(postMessage).toHaveBeenCalledWith(
+      { type: 'stylebotMonacoIframeLoaded' },
+      'chrome-extension://stylebot'
+    );
   });
 });

@@ -87,6 +87,10 @@ const config: StorybookConfig = {
           },
           { find: /^\.\/user-gesture$/, replacement: mock('user-gesture.ts') },
           {
+            find: /^\.\/extension-frame$/,
+            replacement: mock('extension-frame.ts'),
+          },
+          {
             find: /^\.\/CliNoteFrame\.vue$/,
             replacement: mock('CliNoteFrame.vue'),
           },
