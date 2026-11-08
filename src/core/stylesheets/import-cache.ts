@@ -73,7 +73,7 @@ export const pruneImportCache = (liveUrls: ReadonlySet<string>): void => {
  * around CORS. Empty when it can't be fetched, or when the background won't
  * fetch it for this page because no saved style for it imports it.
  */
-export const requestImportCss = (url: string): Promise<string> => {
+const requestImportCss = (url: string): Promise<string> => {
   const message: GetImportCss = { name: 'GetImportCss', url };
 
   return chrome.runtime

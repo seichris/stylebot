@@ -2,6 +2,7 @@ jest.mock('./styles');
 jest.mock('./color-history');
 jest.mock('./editor-window');
 jest.mock('./import-access', () => ({ canFetchImport: jest.fn() }));
+jest.mock('./cli/page-sheets', () => ({ canFetchPageSheet: jest.fn() }));
 jest.mock('./dark-mode-settings', () => ({
   getDarkMode: jest.fn(),
   setDarkMode: jest.fn(),
@@ -13,6 +14,7 @@ import {
   GetRecentColors,
   AddRecentColor,
   GetImportCss,
+  GetPageSheetCss,
   GetDarkMode,
   SetDarkMode,
   SetGlobalDarkModeSettings,
@@ -21,6 +23,7 @@ import {
 } from './messages';
 import * as stylesModule from './styles';
 import * as colorHistoryModule from './color-history';
+import { canFetchPageSheet } from './cli/page-sheets';
 import { canFetchImport } from './import-access';
 import * as darkModeSettings from './dark-mode-settings';
 
@@ -152,6 +155,64 @@ describe('GetImportCss', () => {
 
     expect(canFetchImport).not.toBeCalled();
     expect(stylesModule.getImportCss).not.toBeCalled();
+    expect(sendResponse).toBeCalledWith('');
+  });
+});
+
+describe('GetPageSheetCss', () => {
+  const sender = {
+    id: 'stylebot',
+    frameId: 0,
+    url: 'https://example.com/',
+    tab: { id: 1, url: 'https://example.com/' } as chrome.tabs.Tab,
+  } as chrome.runtime.MessageSender;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('fetches a sheet of a page the agent forces a state on', async () => {
+    jest.mocked(canFetchPageSheet).mockResolvedValue(true);
+    (stylesModule.getImportCss as jest.Mock).mockResolvedValue('.a:hover{}');
+    const sendResponse = jest.fn();
+
+    await GetPageSheetCss(
+      { name: 'GetPageSheetCss', url: 'https://cdn.example.com/a.css' },
+      sender,
+      sendResponse
+    );
+
+    expect(canFetchPageSheet).toBeCalledWith(
+      'https://cdn.example.com/a.css',
+      sender
+    );
+    expect(sendResponse).toBeCalledWith('.a:hover{}');
+  });
+
+  it('answers empty without fetching any other', async () => {
+    jest.mocked(canFetchPageSheet).mockResolvedValue(false);
+    const sendResponse = jest.fn();
+
+    await GetPageSheetCss(
+      { name: 'GetPageSheetCss', url: 'http://intranet.example/site.css' },
+      sender,
+      sendResponse
+    );
+
+    expect(stylesModule.getImportCss).not.toBeCalled();
+    expect(sendResponse).toBeCalledWith('');
+  });
+
+  it('answers empty for a url that is not a string', async () => {
+    const sendResponse = jest.fn();
+
+    await GetPageSheetCss(
+      { name: 'GetPageSheetCss', url: 42 as unknown as string },
+      sender,
+      sendResponse
+    );
+
+    expect(canFetchPageSheet).not.toBeCalled();
     expect(sendResponse).toBeCalledWith('');
   });
 });

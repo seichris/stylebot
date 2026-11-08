@@ -40,6 +40,8 @@ export type GetCommandsResponse = StylebotCommands;
 export type GetReadabilitySettingsResponse = ReadabilitySettings;
 
 export type GetImportCssResponse = string;
+// Empty when the sheet couldn't, or may not, be fetched.
+export type GetPageSheetCssResponse = string;
 export type GetCompiledStylesResponse = CompiledStyles;
 export type GetGoogleWebFontExistsResponse = boolean;
 // The font file as base64, or empty when it couldn't be fetched.
@@ -139,6 +141,7 @@ type BackgroundPageMessageResponse =
   | GetCommandsResponse
   | GetReadabilitySettingsResponse
   | GetImportCssResponse
+  | GetPageSheetCssResponse
   | GetCompiledStylesResponse
   | GetGoogleWebFontExistsResponse
   | GetGoogleFontFileResponse

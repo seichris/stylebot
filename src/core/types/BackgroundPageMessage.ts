@@ -179,6 +179,13 @@ export type GetImportCss = {
   url: string;
 };
 
+// One of the page's own stylesheets, which it can't read, for the CLI to
+// copy the rules of a state it forces from.
+export type GetPageSheetCss = {
+  name: 'GetPageSheetCss';
+  url: string;
+};
+
 export type GetCompiledStyles = {
   name: 'GetCompiledStyles';
 };
@@ -454,6 +461,7 @@ type BackgroundPageMessage =
   | GetReadabilitySettings
   | SetReadabilitySettings
   | GetImportCss
+  | GetPageSheetCss
   | GetCompiledStyles
   | ReadabilityActiveChanged
   | GetGoogleWebFontExists

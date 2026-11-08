@@ -1,4 +1,4 @@
-import { requestImportCss } from '@stylebot/stylesheets';
+import type { GetPageSheetCss, GetPageSheetCssResponse } from '@stylebot/types';
 
 import { copyStateRules } from './state-rules';
 
@@ -39,6 +39,18 @@ export const isStateSheetNode = (node: Node): boolean =>
   node instanceof HTMLStyleElement && node.id === COPIES_ID;
 
 /**
+ * A cross-origin sheet's css, which the background fetches while a state is
+ * forced on this page. Empty when it couldn't.
+ */
+const requestPageSheetCss = (url: string): Promise<string> => {
+  const message: GetPageSheetCss = { name: 'GetPageSheetCss', url };
+
+  return chrome.runtime
+    .sendMessage<GetPageSheetCss, GetPageSheetCssResponse>(message)
+    .catch(() => '');
+};
+
+/**
  * A cross-origin sheet's state rules, from its css fetched by the
  * background, since the page can't read its rules.
  */
@@ -46,7 +58,7 @@ const fetchCopies = (href: string): Promise<string | null> => {
   if (!fetchedCopies.has(href)) {
     fetchedCopies.set(
       href,
-      requestImportCss(href).then(css =>
+      requestPageSheetCss(href).then(css =>
         css ? copyStateRules(css, href) : null
       )
     );

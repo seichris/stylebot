@@ -4,17 +4,35 @@ import type {
   PseudoStateResult,
 } from '@stylebot/types';
 
+import { setForcedOnTab } from './page-sheets';
 import { inspectTab, requireNamed, resolveTab } from './targets';
 import type { CliCommands } from './types';
 
 /**
- * Forces a state on a tab's page, lists what's forced, or undoes it.
+ * Forces a state on a tab's page, lists what's forced, or undoes it. The page
+ * may have its cross-origin sheets fetched for their state rules while
+ * anything is forced there.
  */
-export const forceOnTab = (
+export const forceOnTab = async (
   tabId: number,
   action: PseudoStateAction
-): Promise<PseudoStateResult> =>
-  inspectTab<PseudoStateResult>(tabId, { kind: 'force', action });
+): Promise<PseudoStateResult> => {
+  // Before the page copies the rules, which is part of forcing a state.
+  if (action.op === 'add') {
+    await setForcedOnTab(tabId, true);
+  }
+
+  const result = await inspectTab<PseudoStateResult>(tabId, {
+    kind: 'force',
+    action,
+  });
+
+  if (result.forced.length === 0) {
+    await setForcedOnTab(tabId, false);
+  }
+
+  return result;
+};
 
 /**
  * Runs a callback with a state forced on a tab, and undoes the force after,

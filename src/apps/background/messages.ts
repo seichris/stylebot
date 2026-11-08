@@ -28,6 +28,7 @@ import {
   setDarkMode,
   setGlobalDarkModeSettings,
 } from './dark-mode-settings';
+import { canFetchPageSheet } from './cli/page-sheets';
 import { canFetchImport } from './import-access';
 import { isStylebotSite } from './is-stylebot-site';
 
@@ -64,6 +65,7 @@ import type {
   SetGlobalDarkModeSettings as SetGlobalDarkModeSettingsType,
   SetGlobalDarkModeSettingsResponse,
   GetImportCss as GetImportCssType,
+  GetPageSheetCss as GetPageSheetCssType,
   GetCompiledStylesResponse,
   GetGoogleWebFontExists as GetGoogleWebFontExistsType,
   GetGoogleFontFile as GetGoogleFontFileType,
@@ -88,6 +90,7 @@ import type {
   GetStylesForPageResponse,
   GetReadabilitySettingsResponse,
   GetImportCssResponse,
+  GetPageSheetCssResponse,
   GetGoogleWebFontExistsResponse,
   GetGoogleFontFileResponse,
   RunGoogleDriveSyncResponse,
@@ -445,6 +448,24 @@ export const GetImportCss = async (
   const allowed =
     typeof message.url === 'string' &&
     (await canFetchImport(message.url, sender));
+
+  sendResponse(allowed ? await getImportCss(message.url) : '');
+};
+
+/**
+ * Fetches one of a page's own stylesheets for the CLI to copy a forced
+ * state's rules from, if the agent forces a state there (see
+ * canFetchPageSheet). Any other url gets an empty answer without being
+ * fetched.
+ */
+export const GetPageSheetCss = async (
+  message: GetPageSheetCssType,
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response: GetPageSheetCssResponse) => void
+): Promise<void> => {
+  const allowed =
+    typeof message.url === 'string' &&
+    (await canFetchPageSheet(message.url, sender));
 
   sendResponse(allowed ? await getImportCss(message.url) : '');
 };

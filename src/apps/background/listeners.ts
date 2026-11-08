@@ -42,6 +42,7 @@ import {
   SetDarkMode,
   SetGlobalDarkModeSettings,
   GetImportCss,
+  GetPageSheetCss,
   GetCompiledStyles,
   GetGoogleWebFontExists,
   GetGoogleFontFile,
@@ -396,6 +397,9 @@ export const initListeners = (): void => {
 
         case 'GetImportCss':
           GetImportCss(message, sender, sendResponse);
+          return true;
+        case 'GetPageSheetCss':
+          GetPageSheetCss(message, sender, sendResponse);
           return true;
         case 'GetCompiledStyles':
           GetCompiledStyles(sendResponse);
