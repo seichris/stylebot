@@ -107,10 +107,17 @@ const matchesWildcard = (pageUrl: string, pattern: string): boolean => {
 };
 
 /**
- * Check if the given url matches with the regex
+ * Check if the given url matches with the regex. A pattern that isn't a
+ * valid regex, as one installed from the Gallery may not be, matches nothing
+ * rather than throwing out of every match against the style map.
  */
-const matchesRegex = (pageUrl: string, regex: string): boolean =>
-  new RegExp(regex).test(pageUrl);
+const matchesRegex = (pageUrl: string, regex: string): boolean => {
+  try {
+    return new RegExp(regex).test(pageUrl);
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Check if the URL matches the given pattern

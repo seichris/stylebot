@@ -276,6 +276,38 @@ describe('matchesUrlPattern with wildcards', () => {
   });
 });
 
+describe('matchesUrlPattern with regular expressions', () => {
+  it('matches a page the expression matches', () => {
+    expect(
+      matchesUrlPattern(
+        'https://news.example.com/item?id=1',
+        '^https://news\\.example\\.com/'
+      )
+    ).toBe(true);
+  });
+
+  it('does not match a page the expression does not match', () => {
+    expect(
+      matchesUrlPattern(
+        'https://example.org/',
+        '^https://news\\.example\\.com/'
+      )
+    ).toBe(false);
+  });
+
+  it.each([
+    ['an unclosed group', '^https://example\\.com/('],
+    ['an unclosed class', '^https://example\\.com/[a-'],
+    ['a dangling quantifier', '^*'],
+    ['a bad escape range', '^[z-a]'],
+  ])('matches nothing, without throwing, for %s', (_name, pattern) => {
+    expect(() =>
+      matchesUrlPattern('https://example.com/', pattern)
+    ).not.toThrow();
+    expect(matchesUrlPattern('https://example.com/', pattern)).toBe(false);
+  });
+});
+
 describe('isStylableDocument', () => {
   it('is true for web pages', () => {
     expect(isStylableDocument('text/html')).toBe(true);
