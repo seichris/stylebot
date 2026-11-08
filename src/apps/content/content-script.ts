@@ -1,0 +1,84 @@
+/**
+ * Injects custom CSS for the page as soon as it starts loading. Applies the
+ * localStorage cache (cache.ts) immediately if there is one, otherwise hides
+ * the page (hide-page.ts) until chrome.storage.local.get resolves. Runs Dark
+ * mode in every frame too (dark-mode.ts).
+ */
+import { isReaderShowing, isReaderable } from '@stylebot/readability';
+import { isStylableDocument } from '@stylebot/saved-styles';
+import { readCache } from '@stylebot/stylesheets';
+import type { TabMessage } from '@stylebot/types';
+
+import {
+  hideGalleryPreview,
+  resumeGalleryPreview,
+  showGalleryPreview,
+} from './gallery-preview';
+import { hidePage, revealPage } from './hide-page';
+import { initDarkMode } from './dark-mode';
+import { applyPageState, getPageState, savePageState } from './page-state';
+import { getCompiledStyles } from './saved-styles';
+
+const canStyle = isStylableDocument(document.contentType);
+
+// Registered synchronously here (unlike the editor script's listener,
+// gated behind async init) so the popup always gets a response.
+if (window === window.top) {
+  chrome.runtime.onMessage.addListener(
+    (
+      message: TabMessage,
+      _sender,
+      sendResponse: (response: boolean) => void
+    ) => {
+      if (message.name === 'GetCanStylePage') {
+        sendResponse(canStyle);
+      } else if (message.name === 'GetIsPageReaderable') {
+        sendResponse(isReaderable());
+      } else if (message.name === 'GetIsReaderShowing') {
+        sendResponse(isReaderShowing());
+      } else if (message.name === 'ShowGalleryPreview' && canStyle) {
+        showGalleryPreview(message.preview, message.replacedUrls);
+      } else if (message.name === 'HideGalleryPreview') {
+        hideGalleryPreview(message.installed);
+      }
+    }
+  );
+}
+
+// Fallback if the storage read (or an @import fetch) stalls — real
+// completion almost always wins the race and reveals sooner.
+const REVEAL_TIMEOUT_MS = 150;
+
+const run = () => {
+  const cached = readCache();
+
+  if (cached) {
+    applyPageState(cached);
+  } else {
+    hidePage();
+  }
+
+  const revealTimeout = setTimeout(revealPage, REVEAL_TIMEOUT_MS);
+
+  getCompiledStyles().then(compiled => {
+    const freshState = getPageState(compiled);
+    const unchanged = JSON.stringify(cached) === JSON.stringify(freshState);
+
+    if (!unchanged) {
+      applyPageState(freshState, cached);
+    }
+
+    clearTimeout(revealTimeout);
+    revealPage();
+    savePageState(freshState);
+
+    if (window === window.top) {
+      resumeGalleryPreview();
+    }
+  });
+};
+
+if (canStyle) {
+  run();
+  initDarkMode();
+}

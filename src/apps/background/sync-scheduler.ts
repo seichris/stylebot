@@ -1,0 +1,51 @@
+import { getGoogleDriveSyncEnabled, SYNC_PERIOD_MINUTES } from '@stylebot/sync';
+
+const PERIODIC_ALARM = 'google-drive-sync';
+const AFTER_EDIT_ALARM = 'google-drive-sync-after-edit';
+
+// Long enough for a burst of keystrokes in the code editor to settle into one
+// upload, and the shortest delay chrome.alarms honours for an installed
+// extension (Chrome 120+ clamps anything under 30s).
+const AFTER_EDIT_DELAY_MS = 30 * 1000;
+
+// How long without input counts as being away, so coming back syncs what
+// other devices pushed meanwhile. Locking the screen counts straight away.
+export const AWAY_SECONDS = 10 * 60;
+
+export const isSyncAlarm = (name: string): boolean =>
+  name === PERIODIC_ALARM || name === AFTER_EDIT_ALARM;
+
+/**
+ * Keeps the periodic alarm in step with the enabled flag. Runs on every
+ * service worker start, which MV3 does often — so an existing alarm is left
+ * alone: creating one with the same name replaces it and restarts its
+ * countdown, and a worker that woke more often than every 30 minutes would
+ * never let the periodic sync fire.
+ */
+export const updatePeriodicSync = async (): Promise<void> => {
+  if (await getGoogleDriveSyncEnabled()) {
+    if (!(await chrome.alarms.get(PERIODIC_ALARM))) {
+      chrome.alarms.create(PERIODIC_ALARM, {
+        periodInMinutes: SYNC_PERIOD_MINUTES,
+      });
+    }
+    return;
+  }
+
+  chrome.alarms.clear(PERIODIC_ALARM);
+  chrome.alarms.clear(AFTER_EDIT_ALARM);
+};
+
+/**
+ * Debounced sync after a local edit: each call pushes the alarm out again, so
+ * it fires once the edits stop.
+ */
+export const scheduleSyncAfterEdit = async (): Promise<void> => {
+  if (!(await getGoogleDriveSyncEnabled())) {
+    return;
+  }
+
+  chrome.alarms.create(AFTER_EDIT_ALARM, {
+    when: Date.now() + AFTER_EDIT_DELAY_MS,
+  });
+};

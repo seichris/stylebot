@@ -1,0 +1,848 @@
+[
+  {
+    "id": "hn-everforest-fira",
+    "tags": ["theme", "typography"],
+    "steps": [
+      {
+        "url": "https://news.ycombinator.com/news",
+        "text": "Make this page an everforest theme with Fira Code as typography",
+        "checks": [
+          {
+            "what": "stories sit on an Everforest background",
+            "selector": ".titleline",
+            "expect": {
+              "@background": [
+                "#232a2e±6",
+                "#272e33±6",
+                "#2d353b±6",
+                "#333c43±6",
+                "#343f44±6",
+                "#3d484d±6",
+                "#475258±6",
+                "#fffbef±6",
+                "#fdf6e3±6",
+                "#f3ead3±6",
+                "#efebd4±6",
+                "#f4f0d9±6",
+                "#e6e2cc±6"
+              ]
+            }
+          },
+          {
+            "what": "story titles are readable",
+            "selector": ".titleline > a",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "story titles in Fira Code",
+            "selector": ".titleline > a",
+            "expect": {
+              "font-family": "/Fira Code/"
+            }
+          },
+          {
+            "what": "top bar in an Everforest color",
+            "selector": ".pagetop",
+            "expect": {
+              "@background": [
+                "#232a2e±6",
+                "#272e33±6",
+                "#2d353b±6",
+                "#333c43±6",
+                "#343f44±6",
+                "#3d484d±6",
+                "#475258±6",
+                "#fffbef±6",
+                "#fdf6e3±6",
+                "#f3ead3±6",
+                "#efebd4±6",
+                "#f4f0d9±6",
+                "#e6e2cc±6",
+                "#a7c080±6",
+                "#83c092±6",
+                "#7fbbb3±6",
+                "#dbbc7f±6",
+                "#e69875±6",
+                "#e67e80±6",
+                "#d699b6±6"
+              ]
+            }
+          },
+          {
+            "what": "top bar links are readable",
+            "selector": ".pagetop a",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "footer search box in Everforest colors with readable text",
+            "selector": "input[name=q]",
+            "expect": {
+              "@background": [
+                "#232a2e±6",
+                "#272e33±6",
+                "#2d353b±6",
+                "#333c43±6",
+                "#343f44±6",
+                "#3d484d±6",
+                "#475258±6",
+                "#fffbef±6",
+                "#fdf6e3±6",
+                "#f3ead3±6",
+                "#efebd4±6",
+                "#f4f0d9±6",
+                "#e6e2cc±6"
+              ],
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "More link and YC banner are readable",
+            "selector": ".morelink, center:has(> a[href*=\"apply\"]) > a",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "github-dracula",
+    "tags": ["theme", "variables"],
+    "steps": [
+      {
+        "url": "https://github.com/ankit/stylebot",
+        "text": "Give this page a Dracula theme",
+        "checks": [
+          {
+            "what": "readme on a Dracula background",
+            "selector": ".markdown-body li",
+            "expect": {
+              "@background": ["#282a36±6", "#21222c±6", "#191a21±6"]
+            }
+          },
+          {
+            "what": "readme text in Dracula's foreground",
+            "selector": ".markdown-body li",
+            "expect": {
+              "color": "#f8f8f2±16"
+            }
+          },
+          {
+            "what": "readme links in a Dracula accent",
+            "selector": ".markdown-body li > a",
+            "expect": {
+              "color": [
+                "#bd93f9±12",
+                "#8be9fd±12",
+                "#ff79c6±12",
+                "#50fa7b±12",
+                "#ffb86c±12",
+                "#f1fa8c±12"
+              ]
+            }
+          },
+          {
+            "what": "readme headings and text are readable",
+            "selector": ".markdown-body h2, .markdown-body p",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "inline code is readable",
+            "selector": ".markdown-body code",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "site header in a Dracula color",
+            "selector": "header.HeaderMktg",
+            "expect": {
+              "@background": [
+                "#282a36±6",
+                "#21222c±6",
+                "#191a21±6",
+                "#44475a±6"
+              ]
+            }
+          },
+          {
+            "what": "repo header in a Dracula color",
+            "selector": "#repository-container-header",
+            "expect": {
+              "@background": [
+                "#282a36±6",
+                "#21222c±6",
+                "#191a21±6",
+                "#44475a±6"
+              ]
+            }
+          },
+          {
+            "what": "Notifications, Fork and Star buttons are Dracula and readable",
+            "selector": ".pagehead-actions .btn",
+            "match": "all",
+            "expect": {
+              "@background": [
+                "#282a36±6",
+                "#21222c±6",
+                "#191a21±6",
+                "#44475a±6"
+              ],
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "repo tabs are readable",
+            "selector": "#repository-container-header .UnderlineNav-item",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "file list on a Dracula background",
+            "selector": ".react-directory-filename-column a",
+            "expect": {
+              "@background": ["#282a36±6", "#21222c±6", "#191a21±6"]
+            }
+          },
+          {
+            "what": "file names, commit messages and dates are readable",
+            "selector": ".react-directory-filename-column a, .react-directory-commit-message a, .react-directory-commit-age",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "Code button is readable",
+            "selector": "button[data-variant=primary]",
+            "match": "first",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "topic pills use Dracula colors",
+            "selector": "a[class*='TopicTag-TopicTag']",
+            "match": "all",
+            "expect": {
+              "@background": [
+                "#282a36±6",
+                "#21222c±6",
+                "#191a21±6",
+                "#44475a±6",
+                "#bd93f9±12",
+                "#8be9fd±12",
+                "#ff79c6±12",
+                "#50fa7b±12",
+                "#ffb86c±12",
+                "#f1fa8c±12",
+                "#6272a4±12"
+              ]
+            }
+          },
+          {
+            "what": "topic pills are readable",
+            "selector": "a[class*='TopicTag-TopicTag']",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "sidebar description is readable",
+            "selector": "p[class*='SidebarAbout-module__description']",
+            "match": "first",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "sidebar links (Readme, license, stars) are readable",
+            "selector": "div[class*='SidebarSection-module__sidebarSection'] .mt-2 a",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "wikipedia-book",
+    "tags": ["readability", "typography", "detailed"],
+    "steps": [
+      {
+        "url": "https://en.wikipedia.org/wiki/Typography",
+        "text": "Make the article read like a book: a serif body font at 19px with 1.6 line height, the text column 680px wide and centered, hide the left sidebar and the Appearance panel, and keep the images.",
+        "checks": [
+          {
+            "what": "body text in a serif font",
+            "selector": "#mw-content-text p",
+            "expect": {
+              "font-family": "/(^|,\\s*)serif$|Serif|Georgia|Times|Garamond|Merriweather|Lora|Charter|Palatino|Baskerville|Crimson|Spectral|Literata|Cambria|Book|Libertine|Iowan|Hoefler|Didot|Bodoni|Minion|Caslon|Sabon|Tinos|Gelasio|Newsreader|Fraunces|Playfair|Cormorant|Alegreya|Vollkorn|Slab/"
+            }
+          },
+          {
+            "what": "19px with 1.6 line height",
+            "selector": "#mw-content-text p",
+            "expect": {
+              "font-size": "19",
+              "line-height": "30.4±1"
+            }
+          },
+          {
+            "what": "a 680px column, centered",
+            "selector": "#mw-content-text p",
+            "expect": {
+              "@width": "680±40",
+              "@offcenter": "<=40"
+            }
+          },
+          {
+            "what": "left sidebar hidden",
+            "selector": "#vector-toc-pinned-container",
+            "hidden": true
+          },
+          {
+            "what": "Appearance panel hidden",
+            "selector": "#vector-appearance-pinned-container",
+            "hidden": true
+          },
+          {
+            "what": "images still shown",
+            "selector": "#mw-content-text figure img",
+            "hidden": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "lobsters-compact",
+    "tags": ["layout"],
+    "steps": [
+      {
+        "url": "https://lobste.rs/",
+        "text": "Make it more compact so more stories fit on screen",
+        "checks": [
+          {
+            "what": "story rows at least 20% shorter",
+            "selector": "ol.stories > li",
+            "expect": {
+              "@height": "<=0.8x"
+            }
+          },
+          {
+            "what": "footer in the first screen",
+            "selector": "footer",
+            "expect": {
+              "@top": "<900"
+            }
+          },
+          {
+            "what": "every story still shown",
+            "selector": "ol.stories > li",
+            "match": "all",
+            "hidden": false
+          },
+          {
+            "what": "titles stay at least 13px and readable",
+            "selector": ".story .link a",
+            "match": "all",
+            "expect": {
+              "font-size": ">=13",
+              "@contrast": ">=4.5"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "react-hide-sidebar",
+    "tags": ["layout", "hide"],
+    "steps": [
+      {
+        "url": "https://react.dev/learn",
+        "text": "Hide the sidebar and let the content use the space",
+        "checks": [
+          {
+            "what": "sidebar hidden",
+            "selector": "aside",
+            "hidden": true
+          },
+          {
+            "what": "content at least 20% wider",
+            "selector": "main",
+            "expect": {
+              "@width": ">=1.2x"
+            }
+          },
+          {
+            "what": "the text column sits in the middle, not against the left edge",
+            "selector": "main article p",
+            "expect": {
+              "@offcenter": "<=80"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "books-store-spec",
+    "tags": ["taste", "layout", "detailed"],
+    "steps": [
+      {
+        "url": "https://books.toscrape.com/",
+        "text": "Product grid: 4 columns, each product a card with 12px rounded corners, a 1px #e5e7eb border and a soft shadow; prices bold and green; the Add to basket button a full-width pill.",
+        "checks": [
+          {
+            "what": "4 columns",
+            "selector": "ol.row > li",
+            "columns": 4
+          },
+          {
+            "what": "cards have 12px corners",
+            "selector": "ol.row > li, article.product_pod",
+            "match": "any",
+            "expect": {
+              "border-top-left-radius": "12"
+            }
+          },
+          {
+            "what": "cards have a 1px #e5e7eb border",
+            "selector": "ol.row > li, article.product_pod",
+            "match": "any",
+            "expect": {
+              "border-top-width": "1",
+              "border-top-color": "#e5e7eb"
+            }
+          },
+          {
+            "what": "cards have a soft shadow",
+            "selector": "ol.row > li, article.product_pod",
+            "match": "any",
+            "expect": {
+              "box-shadow": "/^(?!none$)/"
+            }
+          },
+          {
+            "what": "prices bold and green",
+            "selector": ".product_pod .price_color",
+            "expect": {
+              "font-weight": ">=600",
+              "color": "hue 90-170"
+            }
+          },
+          {
+            "what": "button a full-width pill",
+            "selector": ".product_pod .btn",
+            "expect": {
+              "@fill": ">=0.95",
+              "border-top-left-radius": ">=15"
+            }
+          },
+          {
+            "what": "cards stay at least 150px wide",
+            "selector": "article.product_pod",
+            "match": "all",
+            "expect": {
+              "@width": ">=150"
+            }
+          },
+          {
+            "what": "titles, prices and buttons stay inside their card",
+            "selector": ".product_pod h3 a, .product_pod .price_color, .product_pod .btn",
+            "within": "article.product_pod"
+          },
+          {
+            "what": "prices, stock and buttons don't cover the cover, stars or title",
+            "selector": ".product_pod .price_color, .product_pod .instock, .product_pod .btn",
+            "within": "article.product_pod",
+            "clear": ".image_container img, .star-rating, h3 a"
+          },
+          {
+            "what": "book covers still shown",
+            "selector": ".product_pod .image_container img",
+            "match": "all",
+            "hidden": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "react-paper-ink",
+    "tags": ["creative", "typography", "readability"],
+    "steps": [
+      {
+        "url": "https://react.dev/learn",
+        "text": "Paper & ink: give the page the look of an e-reader, with warm off-white paper, soft black ink, a bookish serif at a comfortable size with roomy lines, a narrow centered text column, and links in a muted brown.",
+        "checks": [
+          {
+            "what": "body text on warm paper, off the white",
+            "selector": "main article p",
+            "expect": {
+              "@background": "darker"
+            }
+          },
+          {
+            "what": "paper stays light",
+            "selector": "main article p",
+            "expect": {
+              "@background": "light"
+            }
+          },
+          {
+            "what": "body text in a serif",
+            "selector": "main article p",
+            "expect": {
+              "font-family": "/(^|,\\s*)serif$|Serif|Georgia|Times|Garamond|Merriweather|Lora|Charter|Palatino|Baskerville|Crimson|Spectral|Literata|Cambria|Book|Libertine|Iowan|Hoefler|Didot|Bodoni|Minion|Caslon|Sabon|Tinos|Gelasio|Newsreader|Fraunces|Playfair|Cormorant|Alegreya|Vollkorn|Slab/"
+            }
+          },
+          {
+            "what": "body text at a comfortable size",
+            "selector": "main article p",
+            "expect": {
+              "font-size": ">=17"
+            }
+          },
+          {
+            "what": "a narrow column",
+            "selector": "main article p",
+            "expect": {
+              "@width": "<=760"
+            }
+          },
+          {
+            "what": "links in a muted brown",
+            "selector": "main article p a",
+            "expect": {
+              "color": "hue 10-50"
+            }
+          },
+          {
+            "what": "headings, text and links are readable",
+            "selector": "main article h1, main article h2:not(.text-red-40), main article p, main article p a",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "hn-terminal",
+    "tags": ["creative", "theme", "typography"],
+    "steps": [
+      {
+        "url": "https://news.ycombinator.com/news",
+        "text": "Terminal: a near-black background, phosphor green text, a monospace font for everything, links in a lighter green, and dim green borders.",
+        "checks": [
+          {
+            "what": "stories on a near-black background",
+            "selector": ".titleline",
+            "expect": {
+              "@background": "dark"
+            }
+          },
+          {
+            "what": "top bar dark",
+            "selector": ".pagetop",
+            "expect": {
+              "@background": "dark"
+            }
+          },
+          {
+            "what": "titles in a green",
+            "selector": ".titleline > a",
+            "expect": {
+              "color": "hue 90-180"
+            }
+          },
+          {
+            "what": "story details in a green",
+            "selector": ".subline",
+            "expect": {
+              "color": "hue 90-180"
+            }
+          },
+          {
+            "what": "titles and details in a monospace font",
+            "selector": ".titleline > a, .subline",
+            "match": "all",
+            "expect": {
+              "font-family": "/mono|Mono|Code|Courier|Consolas|Menlo|Monaco|Fira|JetBrains|Inconsolata|Cascadia|Hack|Plex Mono|Space Mono|VT323|Terminal/"
+            }
+          },
+          {
+            "what": "titles, details and top bar links are readable",
+            "selector": ".titleline > a, .subline, .subline a, .pagetop a",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "search box is readable",
+            "selector": "input[name=q]",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "lobsters-wabi-sabi",
+    "tags": ["creative", "theme"],
+    "steps": [
+      {
+        "url": "https://lobste.rs/",
+        "text": "Wabi-sabi: paper white with charcoal text, a single vermilion accent for links and buttons only, generous space between lines and sections, no shadows or gradients, and ads, promos and decorative extras like badges and icons hidden.",
+        "checks": [
+          {
+            "what": "stories on paper white, off the white",
+            "selector": "ol.stories > li",
+            "expect": {
+              "@background": "darker"
+            }
+          },
+          {
+            "what": "paper stays light",
+            "selector": "ol.stories > li",
+            "expect": {
+              "@background": "light"
+            }
+          },
+          {
+            "what": "titles in charcoal or the vermilion accent",
+            "selector": ".story .link a",
+            "expect": {
+              "color": ["dark", "hue 0-30"]
+            }
+          },
+          {
+            "what": "a vermilion accent on links",
+            "selector": ".story .link a, .story .byline a, .story .comments_label a",
+            "match": "any",
+            "expect": {
+              "color": "hue 0-30"
+            }
+          },
+          {
+            "what": "rows given more space",
+            "selector": "ol.stories > li",
+            "expect": {
+              "@height": ">=1.1x"
+            }
+          },
+          {
+            "what": "titles and bylines are readable",
+            "selector": ".story .link a, .story .byline",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "every story still shown",
+            "selector": "ol.stories > li",
+            "match": "all",
+            "hidden": false
+          },
+          {
+            "what": "site navigation still shown",
+            "selector": "header#header nav a",
+            "match": "all",
+            "hidden": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "wikipedia-night-owl",
+    "tags": ["creative", "theme"],
+    "steps": [
+      {
+        "url": "https://en.wikipedia.org/wiki/Typography",
+        "text": "Night owl: a warm dark theme, with a deep brown-black background, cream text, muted tan for secondary text, amber links, slightly lighter cards and inputs, and images dimmed a little.",
+        "checks": [
+          {
+            "what": "article on a dark background",
+            "selector": "#mw-content-text p",
+            "expect": {
+              "@background": "dark"
+            }
+          },
+          {
+            "what": "body text light",
+            "selector": "#mw-content-text p",
+            "expect": {
+              "color": "light"
+            }
+          },
+          {
+            "what": "links in amber",
+            "selector": "#mw-content-text p a",
+            "expect": {
+              "color": "hue 20-55"
+            }
+          },
+          {
+            "what": "images dimmed",
+            "selector": "#mw-content-text figure img",
+            "expect": {
+              "filter": "/brightness\\((0?\\.\\d+|\\d{1,2}%)\\)/"
+            }
+          },
+          {
+            "what": "headings, text and links are readable",
+            "selector": ".mw-page-title-main, #mw-content-text h2, #mw-content-text p, #mw-content-text p a",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "table of contents is readable",
+            "selector": ".vector-toc-text",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "images still shown",
+            "selector": "#mw-content-text figure img",
+            "hidden": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "bbc-calm",
+    "tags": ["creative", "theme", "hide"],
+    "steps": [
+      {
+        "url": "https://www.bbc.com/news",
+        "text": "Calm: quiet, desaturated colors, with an off-white background, soft dark gray text and muted blue-gray links, nothing bright, roomy lines, plenty of space between sections, and ads, promos, banners and pop-ups hidden.",
+        "checks": [
+          {
+            "what": "the ad hidden",
+            "selector": "div[data-testid='ad-unit']",
+            "hidden": true
+          },
+          {
+            "what": "the subscription banner hidden",
+            "selector": "#subliminal-banner",
+            "hidden": true
+          },
+          {
+            "what": "stories on an off-white background",
+            "selector": "h2[data-testid='card-headline']",
+            "expect": {
+              "@background": "darker"
+            }
+          },
+          {
+            "what": "background stays light",
+            "selector": "h2[data-testid='card-headline']",
+            "expect": {
+              "@background": "light"
+            }
+          },
+          {
+            "what": "headlines in a soft dark gray",
+            "selector": "h2[data-testid='card-headline']",
+            "expect": {
+              "color": "lighter"
+            }
+          },
+          {
+            "what": "headlines and story details are readable",
+            "selector": "h2[data-testid='card-headline'], span[data-testid='card-metadata-lastupdated']",
+            "match": "all",
+            "expect": {
+              "@contrast": ">=4.5"
+            }
+          },
+          {
+            "what": "site navigation still shown",
+            "selector": "#main-navigation-container, nav[data-testid='level2-navigation-container']",
+            "match": "all",
+            "hidden": false
+          },
+          {
+            "what": "every story still shown",
+            "selector": "h2[data-testid='card-headline']",
+            "match": "all",
+            "hidden": false
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "bbc-hide-distractions",
+    "tags": ["hide"],
+    "steps": [
+      {
+        "url": "https://www.bbc.com/news",
+        "text": "Hide distractions: ads and promos, banners and pop-ups, cookie, subscription and newsletter prompts, social share buttons, autoplay videos and sticky footers. Keep the navigation and the main content with its images as they are.",
+        "checks": [
+          {
+            "what": "the ad hidden",
+            "selector": "div[data-testid='ad-unit']",
+            "hidden": true
+          },
+          {
+            "what": "the subscription banner hidden",
+            "selector": "#subliminal-banner",
+            "hidden": true
+          },
+          {
+            "what": "site navigation still shown",
+            "selector": "#main-navigation-container, nav[data-testid='level2-navigation-container']",
+            "match": "all",
+            "hidden": false
+          },
+          {
+            "what": "every story still shown",
+            "selector": "h2[data-testid='card-headline']",
+            "match": "all",
+            "hidden": false
+          },
+          {
+            "what": "headlines look as they did",
+            "selector": "h2[data-testid='card-headline']",
+            "expect": {
+              "color": "same",
+              "font-size": "same",
+              "@background": "same"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,45 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #161513;
+  color-scheme: dark;
+}
+
+body {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-family: 'Geist Mono', Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.field {
+  flex: 1;
+  min-width: 0;
+  max-height: 120px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  caret-color: #3fb4d9;
+  color: #d4cec2;
+  font: inherit;
+  resize: none;
+
+  &::placeholder {
+    color: #6c675e;
+  }
+}
+
+.enter {
+  flex: none;
+  color: #6c675e;
+}
+
+.enter[hidden] {
+  display: none;
+}

@@ -1,0 +1,33 @@
+import type { Meta } from '@storybook/vue';
+
+import TheBasicsTab from './TheBasicsTab.vue';
+import { optionsPage } from '@stylebot/storybook/fixtures/options';
+
+const meta: Meta = {
+  title: 'Options/Basics',
+  component: TheBasicsTab,
+  parameters: { padded: false },
+};
+
+export default meta;
+
+export const Default = optionsPage('Basics');
+
+export const NoShortcuts = optionsPage('Basics', {
+  commands: { style: '', stylebot: '', grayscale: '', readability: '' },
+});
+
+export const CliWaiting = {
+  ...optionsPage('Basics', { options: { cliAccess: true } }),
+  parameters: { chrome: { permissions: { granted: true } } },
+};
+
+export const CliConnected = {
+  ...optionsPage('Basics', { options: { cliAccess: true } }),
+  parameters: {
+    chrome: {
+      permissions: { granted: true },
+      storage: { 'cli-connected': true },
+    },
+  },
+};

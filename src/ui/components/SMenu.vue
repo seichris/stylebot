@@ -1,0 +1,100 @@
+<template>
+  <div
+    class="menu"
+    role="menu"
+    tabindex="-1"
+    :class="[{ dense }, size]"
+    :style="{
+      minWidth: `${minWidth}px`,
+      maxHeight: maxHeight ? `${maxHeight}px` : undefined,
+    }"
+  >
+    <slot />
+  </div>
+</template>
+
+<script lang="ts">
+import type { PropType } from 'vue';
+import Vue from 'vue';
+
+export default Vue.extend({
+  name: 'SMenu',
+
+  props: {
+    // Small keeps items at 13px, for menus in a narrow panel like the
+    // editor's.
+    size: {
+      type: String as PropType<'default' | 'small'>,
+      default: 'default',
+    },
+
+    dense: {
+      type: Boolean,
+      default: false,
+    },
+
+    // A floor, not a fixed width — the box grows to fit wider content
+    // (e.g. the longer Windows-style "Alt+Shift+R" vs. Mac's "⌥⇧R").
+    minWidth: {
+      type: Number,
+      default: 176,
+    },
+
+    // Caps the menu's height (px) and makes it scroll instead of growing
+    // unbounded. Omit to fall back to the viewport-relative default.
+    maxHeight: {
+      type: Number,
+      default: 0,
+    },
+  },
+});
+</script>
+
+<style lang="scss" scoped>
+.menu {
+  --menu-padding: 12px;
+  --menu-item-padding-y: 10px;
+  --menu-item-font-size: 13px;
+
+  max-height: calc(100vh - 92px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--menu-padding);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--menu-surface);
+  border: 1px solid var(--menu-border);
+  color: var(--text-primary);
+  box-shadow: 0 6px 16px var(--menu-shadow);
+  animation: dock-menu-in 0.16s ease-out;
+
+  @include thin-scrollbar;
+
+  &.dense {
+    --menu-padding: 4px;
+    --menu-item-padding-y: 7px;
+    --menu-item-font-size: 14px;
+    padding: var(--menu-padding);
+    border-radius: 10px;
+    gap: 1px;
+  }
+
+  &.dense.small {
+    --menu-item-font-size: 13px;
+  }
+}
+
+@keyframes dock-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+</style>

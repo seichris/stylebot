@@ -1,0 +1,287 @@
+<template>
+  <div class="keyboard-shortcuts-view">
+    <subview-header :title="t('keyboard_shortcuts')" @back="back">
+      <s-text size="caption" variant="muted" class="esc-hint">
+        {{ t('esc_to_close') }}
+      </s-text>
+    </subview-header>
+
+    <div class="view-body">
+      <section v-for="group in groups" :key="group.label" class="group">
+        <div class="group-heading">
+          <h2 class="group-label">{{ group.label }}</h2>
+          <a
+            v-if="group.editable && !safari"
+            href="#"
+            class="shortcuts-link"
+            @click="editShortcuts"
+          >
+            {{ t('change_shortcuts') }}
+          </a>
+        </div>
+
+        <div class="rows" :class="`columns-${group.columns || 1}`">
+          <div v-for="row in group.rows" :key="row.label" class="row">
+            <span class="row-label">{{ row.label }}</span>
+            <s-shortcut-chip
+              v-if="row.key"
+              small
+              class="key-chip"
+              :value="row.key"
+              :mac="mac"
+            />
+            <s-text v-else size="caption" variant="muted">
+              {{ t('not_set') }}
+            </s-text>
+          </div>
+        </div>
+
+        <s-text
+          v-if="group.editable && safari"
+          size="caption"
+          variant="muted"
+          class="hint"
+        >
+          {{ t('change_shortcuts_in_safari_settings_extensions') }}
+        </s-text>
+      </section>
+
+      <s-text size="caption" variant="muted" class="footer">
+        {{ t('panel_keys_work_outside_text_fields') }}
+      </s-text>
+    </div>
+  </div>
+</template>
+
+<script lang="ts">
+import Vue from 'vue';
+import { SShortcutChip, SText } from '@stylebot/components';
+import type { StylebotCommands, StylebotEditorCommands } from '@stylebot/types';
+import { isMac, isSafari, openShortcutsPage } from '@stylebot/utils';
+
+import { undoShortcuts } from '../../store/undo-stack';
+import { hasSidePanel } from '../../utils/side-panel';
+import SubviewHeader from '../SubviewHeader.vue';
+
+type ShortcutRow = { label: string; key: string };
+type ShortcutGroup = {
+  label: string;
+  rows: Array<ShortcutRow>;
+  columns?: number;
+  editable?: boolean;
+};
+
+export default Vue.extend({
+  name: 'TheKeyboardShortcutsView',
+
+  components: {
+    SShortcutChip,
+    SText,
+    SubviewHeader,
+  },
+
+  props: {
+    // Forces macOS vs non-Mac rendering for every shortcut in the view;
+    // left unset to auto-detect.
+    mac: {
+      type: Boolean,
+      default: undefined,
+    },
+  },
+
+  computed: {
+    commands(): StylebotCommands {
+      return this.$store.state.commands;
+    },
+
+    // Safari keeps extension shortcuts in its own settings, which no API opens.
+    safari(): boolean {
+      return isSafari();
+    },
+
+    editorCommands(): StylebotEditorCommands {
+      return this.$store.state.editorCommands;
+    },
+
+    groups(): Array<ShortcutGroup> {
+      const keys = this.editorCommands;
+      const undo = undoShortcuts(this.mac ?? isMac());
+
+      return [
+        {
+          label: this.t('this_panel'),
+          rows: [
+            { label: this.t('element_picker'), key: keys.inspect },
+            { label: this.t('hide_selected'), key: keys.hide },
+            { label: this.t('undo'), key: undo.undo },
+            { label: this.t('redo'), key: undo.redo },
+          ],
+        },
+        {
+          label: this.t('tabs'),
+          columns: 2,
+          rows: [
+            { label: this.t('basic_mode'), key: keys.basic },
+            { label: this.t('code_mode'), key: keys.code },
+            { label: this.t('presets_mode'), key: keys.magic },
+          ],
+        },
+        hasSidePanel()
+          ? {
+              label: this.t('position'),
+              columns: 2,
+              rows: [
+                { label: this.t('side_panel'), key: keys.dockSidePanel },
+                { label: this.t('window'), key: keys.dockWindow },
+                { label: this.t('left'), key: keys.dockLeft },
+                { label: this.t('right'), key: keys.dockRight },
+              ],
+            }
+          : {
+              label: this.t('position'),
+              columns: 3,
+              rows: [
+                { label: this.t('left'), key: keys.dockLeft },
+                { label: this.t('right'), key: keys.dockRight },
+                { label: this.t('window'), key: keys.dockWindow },
+              ],
+            },
+        {
+          label: this.t('anywhere'),
+          editable: true,
+          rows: [
+            { label: this.t('toggle_editor'), key: this.commands.stylebot },
+            { label: this.t('toggle_styling'), key: this.commands.style },
+            {
+              label: this.t('toggle_readability'),
+              key: this.commands.readability,
+            },
+          ],
+        },
+      ];
+    },
+  },
+
+  mounted() {
+    this.$store.commit('setInspecting', false);
+  },
+
+  methods: {
+    back(): void {
+      this.$store.commit('setHelp', false);
+    },
+
+    /**
+     * Opens the browser's own page for extension shortcuts, where the global
+     * ones are changed.
+     */
+    editShortcuts(event: MouseEvent): void {
+      event.preventDefault();
+      openShortcutsPage();
+    },
+  },
+});
+</script>
+
+<style lang="scss" scoped>
+.keyboard-shortcuts-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--tab-surface);
+}
+
+.esc-hint {
+  margin-right: 4px;
+}
+
+.view-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px var(--panel-gutter);
+}
+
+.group {
+  flex: none;
+  padding: 0 14px 8px;
+  border-radius: 12px;
+  background: var(--card-surface);
+}
+
+.group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 0 4px;
+}
+
+.group-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--section-heading);
+}
+
+.hint {
+  display: block;
+  margin: 4px 0;
+}
+
+.shortcuts-link {
+  font-size: 13px;
+  color: var(--accent-text);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.rows {
+  display: grid;
+  column-gap: 20px;
+
+  &.columns-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  &.columns-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 16px;
+  }
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 2px 0;
+}
+
+.row-label {
+  @include truncate;
+
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-body);
+}
+
+.key-chip {
+  min-width: 22px;
+  justify-content: center;
+}
+
+.footer {
+  padding: 4px 4px 0;
+}
+</style>

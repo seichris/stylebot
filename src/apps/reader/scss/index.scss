@@ -1,0 +1,73 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Modified version of https://hg.mozilla.org/mozilla-central/file/tip/toolkit/themes/shared/aboutReader.css */
+
+.stylebot-reader {
+  --body-padding: 64px;
+
+  @import './content.scss';
+
+  --background: #faf8f3;
+  --foreground: #2b2926;
+  --muted-foreground: #6f6a5f;
+  --border: #e4ddcf;
+  --link-color: #0b6fb3;
+  --link-visited-color: #7c3fa8;
+  --image-shadow: 0 1px 3px rgba(43, 41, 38, 0.1),
+    0 10px 28px rgba(43, 41, 38, 0.14);
+
+  &.sepia {
+    --background: #f4ecd8;
+    --foreground: #5b4636;
+    --muted-foreground: #8a7360;
+    --border: #e0cfab;
+    --link-color: #9c5c1f;
+    --link-visited-color: #7a4518;
+    --image-shadow: 0 1px 3px rgba(91, 70, 54, 0.12),
+      0 10px 28px rgba(91, 70, 54, 0.16);
+  }
+
+  &.dark {
+    --background: #201f1d;
+    --foreground: #cac5bc;
+    --muted-foreground: #96918a;
+    --border: #3c3a36;
+    --link-color: #6197d0;
+    --link-visited-color: #a87fc4;
+    --image-shadow: 0 0 0 1px rgba(202, 197, 188, 0.08),
+      0 12px 32px rgba(0, 0, 0, 0.55);
+  }
+}
+
+.stylebot-reader {
+  top: 0;
+  left: 0;
+  z-index: 100;
+
+  color: var(--foreground);
+  background-color: var(--background);
+  transition: background-color 0.2s ease, color 0.2s ease, opacity 0.25s ease;
+
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  outline: none;
+
+  &.closing {
+    opacity: 0;
+  }
+}
+
+.stylebot-reader-body {
+  direction: var(--stylebot-page-direction, ltr);
+  margin: 0 auto;
+  padding: var(--body-padding);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.stylebot-reader.revealed .stylebot-reader-body {
+  opacity: 1;
+}

@@ -1,0 +1,72 @@
+import type { Meta } from '@storybook/vue';
+
+import SShortcutChip from './SShortcutChip.vue';
+import { matrix, playground } from '@stylebot/storybook/story-helpers';
+
+const meta: Meta = {
+  title: 'Primitives/Display/SShortcutChip',
+  component: SShortcutChip,
+  argTypes: {
+    value: { control: 'text' },
+    small: { control: 'boolean' },
+    muted: { control: 'boolean' },
+    mac: { control: 'boolean' },
+  },
+  args: { value: 'alt+shift+m', small: false, muted: false },
+};
+
+export default meta;
+
+export const Playground = playground(
+  { SShortcutChip },
+  `<s-shortcut-chip :value="value" :small="small" :muted="muted" :mac="mac" />`
+);
+
+export const Variants = matrix({
+  components: { SShortcutChip },
+  rows: [
+    { label: 'default', attrs: '' },
+    { label: 'small', attrs: 'small' },
+  ],
+  columns: [
+    {
+      label: 'Default',
+      cell: attrs => `<s-shortcut-chip ${attrs} value="alt+shift+m" />`,
+    },
+    {
+      label: 'Muted',
+      cell: attrs => `<s-shortcut-chip ${attrs} muted value="Escape" />`,
+    },
+  ],
+});
+
+/*
+ * Every modifier gets its own icon on macOS; off Mac they fall back to
+ * readable words instead (Alt/Shift/Win/Ctrl), so both need coverage.
+ */
+export const ModifierKeys = matrix({
+  components: { SShortcutChip },
+  rows: [
+    { label: 'Option', attrs: 'value="alt"' },
+    { label: 'Shift', attrs: 'value="shift"' },
+    { label: 'Command', attrs: 'value="command"' },
+    { label: 'Control', attrs: 'value="ctrl"' },
+    { label: 'Option + Shift + M', attrs: 'value="alt+shift+m"' },
+    { label: 'Command + K', attrs: 'value="command+k"' },
+    { label: 'Shift + Control + K', attrs: 'value="shift+ctrl+k"' },
+    { label: 'Command + Shift + P', attrs: 'value="command+shift+p"' },
+    { label: 'Option + Escape', attrs: 'value="alt+Escape"' },
+    { label: 'Command + Arrow Up', attrs: 'value="command+arrowup"' },
+    {
+      label: 'Every modifier + R',
+      attrs: 'value="ctrl+alt+shift+command+r"',
+    },
+  ],
+  columns: [
+    { label: 'macOS', cell: attrs => `<s-shortcut-chip ${attrs} mac />` },
+    {
+      label: 'Windows',
+      cell: attrs => `<s-shortcut-chip ${attrs} :mac="false" />`,
+    },
+  ],
+});

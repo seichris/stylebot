@@ -1,0 +1,16 @@
+export type Manifest = {
+  key?: string;
+  permissions: Array<string>;
+  host_permissions: Array<string>;
+  content_scripts: Array<{ js: Array<string>; matches: Array<string> }>;
+  [field: string]: unknown;
+};
+
+export function buildManifest(options: {
+  browser?: string;
+  nodeEnv?: string;
+  preview?: boolean;
+  store?: string;
+}): Manifest;
+
+export function supportsCLI(browser?: string): boolean;

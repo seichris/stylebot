@@ -1,0 +1,86 @@
+import { applyReadability, removeReadability } from '@stylebot/readability';
+import { getStylesForPage } from '@stylebot/saved-styles';
+import type { CachedState } from '@stylebot/stylesheets';
+import {
+  injectStylesheet,
+  pruneImportCache,
+  removeStylesheet,
+  setStyleOptions,
+  writeCache,
+} from '@stylebot/stylesheets';
+import type { CompiledStyles } from '@stylebot/types';
+
+/**
+ * What this page should have applied: the compiled styles matching its url,
+ * whether its default style turns the reader on, and the options that style
+ * declares while it's on.
+ */
+export const getPageState = (compiled: CompiledStyles): CachedState => {
+  const { styles, defaultStyle } = getStylesForPage(
+    window.location.href,
+    compiled.styles
+  );
+  const options = defaultStyle?.enabled ? defaultStyle.options : undefined;
+
+  return {
+    styles: styles.map(({ url, css, importUrls, enabled }) => ({
+      url,
+      css,
+      importUrls,
+      enabled,
+    })),
+    readability: Boolean(defaultStyle?.readability),
+    ...(options && { options }),
+  };
+};
+
+const enabledUrls = (state?: CachedState | null): Set<string> =>
+  new Set(
+    state?.styles.filter(style => style.enabled).map(style => style.url) ?? []
+  );
+
+/**
+ * Applies a page state: the reader, then each enabled style. Removes disabled
+ * styles too, since `previous` is shared by the origin's tabs and can be stale.
+ */
+export const applyPageState = (
+  state: CachedState,
+  previous?: CachedState | null
+): void => {
+  // Called synchronously, ahead of CSS injection below — readability's own
+  // showLoader() needs to hide the page before the browser's first paint,
+  // and waiting on style injection (which may fetch @imports) risks missing it.
+  if (state.readability) {
+    applyReadability();
+  } else {
+    removeReadability();
+  }
+
+  setStyleOptions(state.options);
+
+  const nextUrls = enabledUrls(state);
+
+  const knownUrls = new Set([
+    ...state.styles.map(style => style.url),
+    ...enabledUrls(previous),
+  ]);
+
+  knownUrls.forEach(url => {
+    if (!nextUrls.has(url)) {
+      removeStylesheet(url);
+    }
+  });
+
+  state.styles
+    .filter(style => style.enabled)
+    .forEach(style => injectStylesheet(style.url, style.css, style.importUrls));
+};
+
+/**
+ * Records the applied state for the next load's first paint, and drops the
+ * cached responses of imports it no longer uses.
+ */
+export const savePageState = (state: CachedState): void => {
+  writeCache(state);
+  pruneImportCache(new Set(state.styles.flatMap(style => style.importUrls)));
+};

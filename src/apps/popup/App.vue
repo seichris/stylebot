@@ -1,0 +1,742 @@
+<template>
+  <s-theme-provider class="popup" :mode="appearance">
+    <div
+      v-if="tab && pageSupport && pageSupport !== 'supported'"
+      class="popup-unsupported"
+    >
+      <unsupported-page :url="tab.url || ''" :support="pageSupport" />
+
+      <template v-if="syncEnabled">
+        <div class="popup-divider" />
+        <sync-stylebot standalone />
+      </template>
+    </div>
+
+    <div v-else-if="tab && tab.id && pageSupport === 'supported'">
+      <div v-show="!galleryBrowsing">
+        <site-profiles
+          v-if="showProfileList"
+          :url="styles[0].url"
+          :profiles="siteProfiles"
+          :active-profile="siteActiveProfile"
+          :enabled="siteEnabled"
+          :disable-off="isOpen"
+          joined
+          :previewing="galleryPreviewing"
+          :publish-items="publishItems"
+          :options="siteOptions"
+          :editing-enabled="editingEnabled"
+          @pick="pickSiteProfile"
+          @option="pickSiteOption"
+          @edit="editSiteProfile"
+          @publish="publishSiteProfile"
+          @rename="renameSiteProfile"
+          @delete="deleteSiteProfile"
+          @create="createSiteProfile"
+        />
+        <template v-else>
+          <div class="popup-header">
+            <div class="popup-header-title">
+              <s-heading as="h1" size="md" class="popup-header-domain">
+                {{ styles.length ? styles[0].url : domain }}
+              </s-heading>
+              <popup-more-menu />
+            </div>
+          </div>
+
+          <div class="popup-divider" />
+        </template>
+
+        <div
+          class="popup-menu"
+          :class="{ 'popup-menu--after-profiles': showProfileList }"
+        >
+          <profile-options
+            v-if="showSiteStyle"
+            :options="siteOptions"
+            @option="pickSiteOption"
+          >
+            <style-component
+              site
+              :url="styles[0].url"
+              :name="siteProfiles[0].name"
+              :shortcut="styleShortcut"
+              :disable-toggle="isOpen || (pageReaderable && readability)"
+              :initial-enabled="styles[0].enabled"
+              :publish-item="publishItems[siteProfiles[0].id] || null"
+              :editing-enabled="editingEnabled"
+              @edit="editSiteProfile(siteProfiles[0].id)"
+              @rename="renameSiteProfile(siteProfiles[0].id, $event)"
+              @publish="publishSiteProfile(siteProfiles[0].id)"
+              @delete="deleteSiteStyle"
+              @toggle="siteEnabled = $event"
+            />
+          </profile-options>
+
+          <create-profile
+            v-if="showSiteStyle && editingEnabled"
+            :names="siteProfileNames"
+            @create="createSiteProfile"
+          />
+
+          <style-component
+            v-for="style in rowStyles"
+            :key="style.url"
+            :url="style.url"
+            :disable-toggle="isOpen || (pageReaderable && readability)"
+            :initial-enabled="style.enabled"
+            :profiles="profilesOf(style)"
+            :editable="style.url !== styles[0].url"
+          />
+
+          <dark-mode :tab="tab" />
+
+          <readability
+            v-if="showReadability"
+            :tab="tab"
+            :initial-readability="readability"
+            :shortcut="readabilityShortcut"
+            @change="readability = $event"
+          />
+        </div>
+      </div>
+
+      <the-gallery
+        v-if="stylesLoaded"
+        :tab="tab"
+        :compact="styles.length > 0"
+        :browsing="galleryBrowsing"
+        @browse="galleryBrowsing = $event"
+        @preview="galleryPreviewName = $event"
+      />
+
+      <div
+        v-if="showFooter || syncEnabled"
+        v-show="footerShown"
+        class="popup-divider"
+      />
+
+      <div
+        v-if="showFooter"
+        v-show="footerShown"
+        class="popup-footer"
+        :class="{
+          'popup-footer--above-sync': syncEnabled && !galleryBrowsing,
+        }"
+      >
+        <toggle-stylebot
+          ref="toggle"
+          :is-open="isOpen"
+          :tab="tab"
+          :shortcut="stylebotShortcut"
+          :side-panel="dockLocation === 'sidepanel'"
+          :profile-name="editProfileName"
+          :has-style="styles.length > 0"
+        />
+      </div>
+
+      <sync-stylebot
+        v-if="syncEnabled"
+        v-show="!galleryBrowsing"
+        :standalone="!showFooter"
+        @synced="loadStyles"
+      />
+
+      <release-notification />
+
+      <!-- Asked only on a page the user has styled, where they see it work. -->
+      <rating-prompt v-if="styles.length" />
+    </div>
+  </s-theme-provider>
+</template>
+
+<script lang="ts">
+import Vue from 'vue';
+import { SHeading, SThemeProvider } from '@stylebot/components';
+
+import StyleComponent from './components/Style.vue';
+import SiteProfiles from './components/SiteProfiles.vue';
+import ProfileOptions from './components/ProfileOptions.vue';
+import CreateProfile from './components/CreateProfile.vue';
+import PopupMoreMenu from './components/PopupMoreMenu.vue';
+import Readability from './components/Readability.vue';
+import DarkMode from './components/DarkMode.vue';
+import SyncStylebot from './components/SyncStylebot.vue';
+import ToggleStylebot from './components/ToggleStylebot.vue';
+import UnsupportedPage from './components/UnsupportedPage.vue';
+import ReleaseNotification from './components/notifications/ReleaseNotification.vue';
+import RatingPrompt from './components/notifications/RatingPrompt.vue';
+import TheGallery from './components/TheGallery.vue';
+
+import {
+  getStyles,
+  getCommands,
+  getOption,
+  getCurrentTab,
+  getIsStylebotOpen,
+  getIsPageReaderable,
+  enableStyle,
+  disableStyle,
+  setActiveProfile,
+  setStyleOption,
+  renameProfile,
+  deleteProfile,
+  deleteStyle,
+  createProfile,
+  getRestoredPageSupport,
+  getPublishMenuItem,
+  publishProfileToGallery,
+} from './utils';
+import type { StyleOption } from '@stylebot/types';
+import type { GalleryMenuItem } from '@stylebot/gallery';
+
+import { getGoogleDriveSyncEnabled } from '@stylebot/sync';
+import { getStyleOptionValue, parseStyleOptions } from '@stylebot/css';
+import {
+  addProfile,
+  expandProfiles,
+  getProfileOptions,
+  hasAnyCss,
+  listProfiles,
+  removeProfile,
+  renameProfile as renameStyleProfile,
+  setProfileOption,
+} from '@stylebot/saved-styles';
+import type { ProfileSummary } from '@stylebot/saved-styles';
+import type {
+  GetCommandsResponse,
+  Style,
+  StylebotAppearance,
+  StylebotLayout,
+  StylebotDockLocation,
+} from '@stylebot/types';
+import { detectChromiumVariant, isIPhone, isWebPageUrl } from '@stylebot/utils';
+import type { PageSupport } from '@stylebot/utils';
+
+const PAGE_ANSWER_WAIT_MS = 100;
+
+export default Vue.extend({
+  name: 'App',
+
+  components: {
+    SHeading,
+    SThemeProvider,
+    PopupMoreMenu,
+    StyleComponent,
+    SiteProfiles,
+    ProfileOptions,
+    CreateProfile,
+    ToggleStylebot,
+    Readability,
+    DarkMode,
+    SyncStylebot,
+    UnsupportedPage,
+    ReleaseNotification,
+    RatingPrompt,
+    TheGallery,
+  },
+
+  data(): {
+    isOpen: boolean;
+    readability: boolean;
+    pageReaderable: boolean;
+    tab?: chrome.tabs.Tab;
+    styles: Array<Style>;
+    // Only this style's scheme reaches the page.
+    defaultStyleUrl: string;
+    // The gallery waits for the styles, to know which way to show itself.
+    stylesLoaded: boolean;
+    // The site's own style, as picked here since the popup opened.
+    siteActiveProfile: string;
+    siteEnabled: boolean;
+    syncEnabled: boolean;
+    // Null until the tab answers, so neither view shows before it does.
+    pageSupport: PageSupport | null;
+    commands?: GetCommandsResponse;
+    appearance: StylebotAppearance;
+    dockLocation: StylebotDockLocation | '';
+    // A gallery style is shown on the page in place of the site's own.
+    galleryPreviewName: string | null;
+    // The gallery's styles stand in for the rest of the popup.
+    galleryBrowsing: boolean;
+    // Each site profile's way into publishing, once known.
+    publishItems: Record<string, GalleryMenuItem | null>;
+    // iPhone has no editor, so nothing here opens it.
+    editingEnabled: boolean;
+  } {
+    return {
+      styles: [],
+      defaultStyleUrl: '',
+      stylesLoaded: false,
+      siteActiveProfile: '',
+      siteEnabled: true,
+      isOpen: false,
+      tab: undefined,
+      readability: false,
+      pageReaderable: false,
+      syncEnabled: false,
+      pageSupport: null,
+      commands: undefined,
+      appearance: 'system',
+      dockLocation: '',
+      galleryPreviewName: null,
+      galleryBrowsing: false,
+      publishItems: {},
+      editingEnabled: !isIPhone(),
+    };
+  },
+
+  computed: {
+    domain(): string {
+      try {
+        return this.tab?.url ? new URL(this.tab.url).hostname : '';
+      } catch {
+        return '';
+      }
+    },
+
+    siteProfiles(): Array<ProfileSummary> {
+      return this.styles.length ? listProfiles(this.styles[0]) : [];
+    },
+
+    siteProfileNames(): Array<string> {
+      return this.siteProfiles.map(
+        profile => profile.name || this.t('profile_default_name')
+      );
+    },
+
+    // Several matching styles each get the same row instead, so the list
+    // can't be read as turning off the whole page.
+    showProfileList(): boolean {
+      return this.styles.length === 1 && this.siteProfiles.length > 1;
+    },
+
+    // Offered only where it applies, or to turn it back off.
+    showReadability(): boolean {
+      return this.pageReaderable || this.readability;
+    },
+
+    // The site's one style, as an on/off row rather than a profile list.
+    showSiteStyle(): boolean {
+      return this.styles.length === 1 && !this.showProfileList;
+    },
+
+    // With broader patterns also matching the page, e.g. *.example.com,
+    // every matching style is a row named by its url.
+    rowStyles(): Array<Style> {
+      return this.styles.length > 1 ? this.styles : [];
+    },
+
+    // The options the site's active profile declares, while it's on.
+    siteOptions(): Array<StyleOption> {
+      const site = this.styles.find(({ url }) => url === this.defaultStyleUrl);
+
+      if (!site || !this.siteEnabled) {
+        return [];
+      }
+
+      const profileId = this.siteActiveProfile;
+      const sheet = expandProfiles(site).sheets[profileId];
+      const stored = getProfileOptions(site, profileId);
+      const declared = parseStyleOptions(sheet?.css ?? '');
+
+      return Object.entries(declared).map(([name, declaration]) => ({
+        name,
+        declaration,
+        value: getStyleOptionValue(declaration, stored[name]),
+      }));
+    },
+
+    galleryPreviewing(): boolean {
+      return this.galleryPreviewName !== null;
+    },
+
+    showFooter(): boolean {
+      return this.editingEnabled;
+    },
+
+    // Kept in place while hidden, so editing a profile can still open the editor.
+    footerShown(): boolean {
+      return !this.galleryBrowsing && !this.galleryPreviewing;
+    },
+
+    // Names the profile the editor would open on, once it has a name: a
+    // single style left unnamed is just "the style". With several styles
+    // matching, it names the style instead, whose row shows the profile.
+    editProfileName(): string {
+      if (this.rowStyles.length) {
+        return this.styles[0].url;
+      }
+
+      const profile = this.siteProfiles.find(
+        ({ id }) => id === this.siteActiveProfile
+      );
+
+      if (!profile) {
+        return '';
+      }
+
+      return this.showProfileList
+        ? profile.name || this.t('profile_default_name')
+        : profile.name;
+    },
+
+    styleShortcut(): string {
+      return this.commands?.style ?? '';
+    },
+
+    readabilityShortcut(): string {
+      return this.commands?.readability ?? '';
+    },
+
+    stylebotShortcut(): string {
+      return this.commands?.stylebot ?? '';
+    },
+  },
+
+  created() {
+    detectChromiumVariant();
+
+    getCurrentTab(tab => {
+      this.tab = tab;
+      this.loadPageSupport(tab);
+    });
+
+    getGoogleDriveSyncEnabled().then(enabled => {
+      this.syncEnabled = enabled;
+    });
+
+    getCommands(commands => {
+      this.commands = commands;
+    });
+
+    getOption('appearance', appearance => {
+      this.appearance = (appearance as StylebotAppearance) ?? 'system';
+    });
+
+    getOption('layout', layout => {
+      this.dockLocation = (layout as StylebotLayout).dockLocation;
+    });
+  },
+
+  methods: {
+    /**
+     * Shows a web page as supported if it hasn't answered shortly. It answers
+     * from its own main thread, which a heavy page can tie up for seconds
+     * while it loads; a late answer still corrects the view.
+     */
+    async loadPageSupport(tab: chrome.tabs.Tab): Promise<void> {
+      const showSupported = () => this.showPageSupport('supported');
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+
+      if (isWebPageUrl(tab.url ?? '')) {
+        timeout = setTimeout(showSupported, PAGE_ANSWER_WAIT_MS);
+      }
+
+      const support = await getRestoredPageSupport(tab);
+
+      clearTimeout(timeout);
+      this.showPageSupport(support);
+    },
+
+    /**
+     * Shows what Stylebot can do on the tab, loading the page's state the
+     * first time it's known to be supported.
+     */
+    showPageSupport(support: PageSupport): void {
+      const loaded = this.pageSupport === 'supported';
+
+      this.pageSupport = support;
+
+      if (support !== 'supported' || loaded || !this.tab) {
+        return;
+      }
+
+      getIsStylebotOpen(this.tab, isOpen => {
+        this.isOpen = isOpen;
+      });
+
+      getIsPageReaderable(this.tab, isReaderable => {
+        this.pageReaderable = isReaderable;
+      });
+
+      this.loadStyles();
+    },
+
+    /**
+     * Reads the tab's styles; again after a sync, which may have brought in
+     * styles or profiles edited on another device.
+     */
+    loadStyles(): void {
+      if (!this.tab) {
+        return;
+      }
+
+      getStyles(this.tab, ({ styles, defaultStyle }) => {
+        // Matches come in save order, so the page's own style is moved first.
+        this.styles = styles
+          .filter(hasAnyCss)
+          .sort(
+            (a, b) =>
+              Number(b.url === defaultStyle?.url) -
+              Number(a.url === defaultStyle?.url)
+          );
+        this.defaultStyleUrl = defaultStyle?.url ?? '';
+        this.stylesLoaded = true;
+
+        const [site] = this.styles;
+
+        if (site) {
+          this.siteEnabled = site.enabled;
+          this.siteActiveProfile = expandProfiles(site).active;
+          this.loadPublishItems(site);
+        }
+        this.readability = !!defaultStyle && defaultStyle.readability;
+      });
+    },
+
+    async loadPublishItems(site: Style): Promise<void> {
+      const { sheets } = expandProfiles(site);
+      const entries = await Promise.all(
+        Object.entries(sheets).map(async ([id, { css }]) => {
+          const item = await getPublishMenuItem(site.url, id, css);
+
+          return [id, item] as const;
+        })
+      );
+
+      this.publishItems = Object.fromEntries(entries);
+    },
+
+    profilesOf(style: Style): Array<ProfileSummary> {
+      return listProfiles(style);
+    },
+
+    /**
+     * Applies a profile picked for the site, turning its style back on if
+     * it was off, or turns the style off when no profile is picked.
+     */
+    pickSiteProfile(id: string | null): void {
+      const { url } = this.styles[0];
+
+      // Picking a profile ends a gallery preview, so the pick shows.
+      (this.$refs.gallery as InstanceType<typeof TheGallery>)?.cancel();
+
+      if (id === null) {
+        if (this.siteEnabled) {
+          disableStyle(url);
+        }
+        this.siteEnabled = false;
+        return;
+      }
+
+      if (id !== this.siteActiveProfile) {
+        setActiveProfile(url, id);
+      }
+      if (!this.siteEnabled) {
+        enableStyle(url);
+      }
+
+      this.siteActiveProfile = id;
+      this.siteEnabled = true;
+    },
+
+    pickSiteOption(name: string, value: string): void {
+      const [site] = this.styles;
+      const profileId = this.siteActiveProfile;
+
+      setStyleOption(site.url, profileId, name, value);
+      this.styles.splice(0, 1, setProfileOption(site, profileId, name, value));
+    },
+
+    /**
+     * Switches the site to a profile and opens the editor on it.
+     */
+    editSiteProfile(id: string): void {
+      this.pickSiteProfile(id);
+
+      if (!this.isOpen) {
+        (this.$refs.toggle as InstanceType<typeof ToggleStylebot>).toggle();
+      }
+    },
+
+    /**
+     * Opens the Gallery page a profile's item links to, or else publishes a
+     * profile of yours on the gallery site, without opening the editor.
+     */
+    publishSiteProfile(id: string): void {
+      const galleryUrl = this.publishItems[id]?.url;
+
+      if (galleryUrl) {
+        chrome.tabs.create({ url: galleryUrl });
+      } else if (this.tab?.id) {
+        publishProfileToGallery(this.tab.id, this.styles[0].url, id);
+      }
+
+      window.close();
+    },
+
+    renameSiteProfile(id: string, name: string): void {
+      const [site, ...rest] = this.styles;
+
+      renameProfile(site.url, id, name);
+      this.styles = [renameStyleProfile(site, id, name), ...rest];
+    },
+
+    /**
+     * Deletes a profile. Deleting the one that's on turns the site's style
+     * off, unless the open editor is keeping it on.
+     */
+    deleteSiteProfile(id: string): void {
+      const [site, ...rest] = this.styles;
+      const turnOff =
+        this.siteEnabled && id === this.siteActiveProfile && !this.isOpen;
+
+      // Turned off first, or the page briefly gets the next profile's css.
+      if (turnOff) {
+        disableStyle(site.url);
+        this.siteEnabled = false;
+      }
+
+      deleteProfile(site.url, id);
+
+      const updated = { ...removeProfile(site, id), enabled: this.siteEnabled };
+
+      this.styles = [updated, ...rest];
+      this.siteActiveProfile = expandProfiles(updated).active;
+    },
+
+    /**
+     * Deletes the site's style, leaving the page unstyled.
+     */
+    deleteSiteStyle(): void {
+      const [site, ...rest] = this.styles;
+
+      deleteStyle(site.url);
+      this.styles = rest;
+    },
+
+    /**
+     * Adds a blank profile to the site's style, applies it and opens the
+     * editor on it, turning the style on if it was off. The editor opens
+     * straight away, while the keypress still allows a side panel.
+     */
+    async createSiteProfile(name: string): Promise<void> {
+      const [site] = this.styles;
+      const created = createProfile(site.url, name);
+
+      if (!this.siteEnabled) {
+        enableStyle(site.url);
+      }
+
+      if (!this.isOpen) {
+        (this.$refs.toggle as InstanceType<typeof ToggleStylebot>).toggle();
+      }
+
+      const { profileId } = await created;
+
+      this.styles = [
+        addProfile(site, { id: profileId, name, css: '', activate: true }),
+      ];
+      this.siteActiveProfile = profileId;
+      this.siteEnabled = true;
+    },
+  },
+});
+</script>
+
+<style lang="scss">
+html,
+body {
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui, 'Geist', system-ui, sans-serif);
+  font-size: 14px;
+}
+
+.popup {
+  width: 320px;
+
+  @include touch {
+    --popup-row-height: 40px;
+    --popup-menu-button-size: 32px;
+    --popup-row-actions-shown: 1;
+    --popup-shortcut-display: none;
+
+    @media (max-width: 600px) {
+      width: auto;
+      zoom: 1.125;
+    }
+  }
+}
+
+.popup-unsupported:has(.anchored-menu-panel) {
+  min-height: 160px;
+}
+
+.popup-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+}
+
+.popup-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.popup-header-domain {
+  @include truncate;
+
+  min-width: 0;
+  flex: 1;
+}
+
+.popup-divider {
+  height: 1px;
+  background: var(--panel-border);
+}
+
+.popup-menu {
+  padding: 8px 6px;
+}
+
+.popup-menu.popup-menu--after-profiles {
+  padding-top: 0;
+}
+
+.popup-footer {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px 12px;
+}
+
+.popup-footer .pill-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.popup-footer.popup-footer--above-sync {
+  padding-bottom: 8px;
+}
+
+.row-label {
+  min-width: 0;
+  flex: 1;
+  font-size: 13.5px;
+}
+</style>

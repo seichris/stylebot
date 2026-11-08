@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+    <script src="theme-init.js"></script>
+    <link href="../../fonts/fonts.css" rel="stylesheet" />
+    <link href="editor.css" rel="stylesheet" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #fcfcfd;
+      }
+
+      html.theme-dark,
+      html.theme-dark body {
+        background: #1a1b1e;
+      }
+
+      #container .monaco-editor .margin-view-overlays .line-numbers {
+        box-sizing: border-box;
+        padding-left: 24px;
+        text-align: left;
+      }
+
+      #container {
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        position: fixed;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="container"></div>
+
+    <!-- Injected dynamically by build process -->
+    <script defer src="./node_modules/monaco-editor/min/vs/loader.js"></script>
+    <!-- Injected dynamically by build process -->
+    <script defer src="./node_modules/requirejs/require.js"></script>
+
+    <script defer src="options-index.js"></script>
+  </body>
+</html>

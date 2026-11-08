@@ -1,0 +1,106 @@
+// Takes the store listing's screenshots from the current build, on live sites,
+// into store/screenshots/:
+//
+//   yarn capture:store [--safari | --phone] [--only <name>...] [--out <dir>] [--no-build]
+//
+// With --safari, the Mac App Store's set goes into store/safari/ instead, at
+// 2560×1600, without the CLI, each slide showing the whole window. With --phone, the same screens are cut out,
+// without their headlines, for the tour on stylebot.dev's phone layout, into
+// captures/tour/.
+
+import path from 'node:path';
+
+import { bin, rootDir, runOrExit } from '../lib/cli.mjs';
+import { launch } from './browser.mjs';
+import { SHOTS } from './shots.mjs';
+import { capturesDir, shownPath, takeOutput } from './output.mjs';
+
+const USAGE = `usage: yarn capture:store [--safari | --phone] [--only <name>...] [--out <dir>] [--no-build]
+
+  --safari    take the Mac App Store's set, at 2560×1600 with whole
+              windows, into store/safari/
+  --phone     cut the screens out for stylebot.dev's phone tour, into
+              captures/tour/
+  --out       save into this directory instead
+  --only      retake just these shots, by name or number (e.g. --only 8-readability 2)
+  --no-build  skip the rebuild (dist must already be current)
+
+Shots:
+${SHOTS.map(shot => `  ${shot.name.padEnd(20)}${shot.about}`).join('\n')}
+`;
+
+const args = process.argv.slice(2);
+
+if (args.includes('--help') || args.includes('-h')) {
+  process.stdout.write(USAGE);
+  process.exit(0);
+}
+
+const safari = args.includes('--safari');
+const phone = args.includes('--phone');
+const { outDir, rest } = takeOutput(
+  args,
+  phone
+    ? capturesDir('tour')
+    : path.join(rootDir, 'store', safari ? 'safari' : 'screenshots')
+);
+// Drawn at 2x either way; Safari keeps those pixels for the Mac App Store.
+const options = safari ? { scale: 'device' } : {};
+
+const only = rest.includes('--only')
+  ? rest.slice(rest.indexOf('--only') + 1).filter(arg => !arg.startsWith('--'))
+  : [];
+const available = SHOTS.filter(shot =>
+  safari ? !shot.cli : !phone || shot.phone
+);
+const shots = only.length
+  ? available.filter(({ name }) =>
+      only.some(wanted => name === wanted || name.startsWith(`${wanted}-`))
+    )
+  : available;
+
+if (!shots.length) {
+  console.error(`No shot named ${only.join(', ')}.\n\n${USAGE}`);
+  process.exit(1);
+}
+
+if (!args.includes('--no-build')) {
+  runOrExit(bin('yarn'), ['build']);
+}
+
+let failed = 0;
+
+// One at a time, each in a fresh browser, so no shot's state reaches another.
+for (const shot of shots) {
+  const file = phone
+    ? path.join(outDir, `${shot.name.replace(/^\d+-/, '')}.webp`)
+    : path.join(outDir, `${shot.name}.png`);
+  const browser = shot.standalone ? null : await launch(shot);
+
+  try {
+    const shotOptions = phone
+      ? { phone: shot.phone }
+      : {
+          ...options,
+          slide: safari
+            ? {
+                title: shot.slide.title,
+                accent: shot.slide.accent,
+                whole: true,
+              }
+            : shot.slide,
+        };
+    await (shot.standalone
+      ? shot.run(file, shotOptions)
+      : shot.run(browser, file, shotOptions));
+    console.log(`✓ ${shot.name}`);
+  } catch (error) {
+    failed++;
+    console.error(`✗ ${shot.name}: ${error.message.split('\n')[0]}`);
+  } finally {
+    await browser?.close();
+  }
+}
+
+console.log(`\nSaved to ${shownPath(outDir)}/`);
+process.exit(failed ? 1 : 0);

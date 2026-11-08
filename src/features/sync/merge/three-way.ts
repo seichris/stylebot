@@ -1,0 +1,273 @@
+import type { StyleMap, StyleWithoutUrl } from '@stylebot/types';
+import {
+  activateProfile,
+  collapseProfiles,
+  expandProfiles,
+  isEquivalentCss,
+  isEquivalentStyle,
+  hasSameUnknownFields,
+  isSameGalleryListing,
+  keepLocalProfileOptions,
+} from '@stylebot/saved-styles';
+import type { ExpandedProfiles, ProfileSheet } from '@stylebot/saved-styles';
+
+import { fillGalleryListings } from './gallery-listings';
+import { mergeCss } from './merge-css';
+import { mergeWithoutBase } from './merge-without-base';
+
+export type StyleMergeResult = {
+  styles: StyleMap;
+  // Urls whose css had lines parked in a conflict comment.
+  conflicts: Array<string>;
+};
+
+// Each device keeps its own applied profile, so switching is not a change.
+const ignoreActiveProfile = true;
+
+const parseTime = (timestamp?: string) => {
+  const time = new Date(timestamp ?? '').getTime();
+  return Number.isNaN(time) ? 0 : time;
+};
+
+const isSameSheet = (a?: ProfileSheet, b?: ProfileSheet) => {
+  if (!a || !b) {
+    return !a && !b;
+  }
+
+  return (
+    a.name === b.name &&
+    isEquivalentCss(a.css, b.css) &&
+    isSameGalleryListing(a.galleryListing, b.galleryListing) &&
+    hasSameUnknownFields(a, b)
+  );
+};
+
+/**
+ * The gallery listing a profile ends up with when both sides changed it: a
+ * change made on one side only, or the newer side's.
+ */
+const mergeGalleryListing = (
+  base: ProfileSheet | undefined,
+  local: ProfileSheet,
+  remote: ProfileSheet,
+  localWins: boolean
+) => {
+  if (isSameGalleryListing(remote.galleryListing, base?.galleryListing)) {
+    return local.galleryListing;
+  }
+
+  if (isSameGalleryListing(local.galleryListing, base?.galleryListing)) {
+    return remote.galleryListing;
+  }
+
+  return localWins ? local.galleryListing : remote.galleryListing;
+};
+
+/**
+ * The name a profile ends up with when both sides changed it: a rename made
+ * on one side only, or the newer rename when both renamed it.
+ */
+const mergeName = (
+  base: ProfileSheet | undefined,
+  local: ProfileSheet,
+  remote: ProfileSheet,
+  localWins: boolean
+) => {
+  if (local.name === remote.name || remote.name === base?.name) {
+    return local.name;
+  }
+
+  if (local.name === base?.name) {
+    return remote.name;
+  }
+
+  return localWins ? local.name : remote.name;
+};
+
+/**
+ * Both sides changed the same style: flags follow the newer edit, this
+ * device's applied profile stays applied while it exists, and each profile
+ * merges like a style does, its css hunk by hunk against the base with the
+ * newer edit winning any hunk both sides rewrote. A profile is only deleted
+ * when the side that deleted it holds the newer copy of the style.
+ */
+const mergeStyle = (
+  base: StyleWithoutUrl | undefined,
+  local: StyleWithoutUrl,
+  remote: StyleWithoutUrl,
+  at: string
+): { style: StyleWithoutUrl; conflicted: boolean } => {
+  const localWins =
+    parseTime(local.modifiedTime) >= parseTime(remote.modifiedTime);
+  const newer = localWins ? local : remote;
+
+  const b = base ? expandProfiles(base).sheets : {};
+  const l = expandProfiles(local);
+  const r = expandProfiles(remote);
+  const ids = new Set([
+    ...Object.keys(l.sheets),
+    ...Object.keys(r.sheets),
+    ...Object.keys(b),
+  ]);
+
+  const sheets: ExpandedProfiles['sheets'] = {};
+  let conflicted = false;
+
+  ids.forEach(id => {
+    const bs = b[id];
+    const ls = l.sheets[id];
+    const rs = r.sheets[id];
+    const localChanged = !isSameSheet(bs, ls);
+    const remoteChanged = !isSameSheet(bs, rs);
+
+    let sheet: ProfileSheet | undefined;
+
+    // A deletion only carries when it is the newer edit of the style: an
+    // older copy missing a profile is more likely stale than deliberate.
+    if (!remoteChanged) {
+      sheet = ls ?? (localWins ? undefined : rs);
+    } else if (!localChanged) {
+      sheet = rs ?? (localWins ? ls : undefined);
+    } else if (!ls || !rs || isSameSheet(ls, rs)) {
+      sheet = ls ?? rs;
+    } else {
+      const merged = mergeCss(bs?.css ?? '', ls.css, rs.css, localWins, at);
+
+      // Fields this version doesn't know come from both, the newer winning.
+      sheet = {
+        ...(localWins ? rs : ls),
+        ...(localWins ? ls : rs),
+        name: mergeName(bs, ls, rs, localWins),
+        css: merged.css,
+        galleryListing: mergeGalleryListing(bs, ls, rs, localWins),
+      };
+      conflicted = conflicted || merged.conflicted;
+    }
+
+    if (sheet) {
+      sheets[id] = sheet;
+    }
+  });
+
+  const active = [l.active, r.active, ...Object.keys(sheets)].find(
+    id => id in sheets
+  );
+
+  if (!active) {
+    return { style: newer, conflicted };
+  }
+
+  if (!base?.profiles && !local.profiles && !remote.profiles) {
+    return { style: { ...newer, css: sheets[active].css }, conflicted };
+  }
+
+  return {
+    style: collapseProfiles(newer, { active, sheets }),
+    conflicted,
+  };
+};
+
+/**
+ * A copy stripped of its profiles by a version of Stylebot that predates
+ * them, given back the base's profiles with its css as the active one.
+ */
+const restoreProfiles = (
+  base: StyleWithoutUrl | undefined,
+  side: StyleWithoutUrl | undefined
+) => {
+  if (!base?.profiles || !side || side.profiles) {
+    return side;
+  }
+
+  const { active, sheets } = expandProfiles(base);
+
+  return collapseProfiles(side, {
+    active,
+    sheets: { ...sheets, [active]: { ...sheets[active], css: side.css } },
+  });
+};
+
+/**
+ * Merges local and remote against the base they both descend from — the map
+ * as it stood after the last sync. Given the base, a style missing on one side
+ * is a deletion to carry over rather than an addition to restore, and a style
+ * edited on both sides is merged rather than one copy dropped.
+ *
+ * Per url:
+ *   unchanged on both sides         → keep
+ *   changed on one side only        → take that side (including its deletion)
+ *   changed identically on both     → keep
+ *   edited on one, deleted on other → keep the edit
+ *   edited differently on both      → mergeStyle
+ *
+ * Without a base there is nothing to deduce from, so the newest-wins union
+ * stands in — once, on a device's first sync.
+ */
+export const mergeThreeWay = (
+  base: StyleMap | undefined,
+  local: StyleMap,
+  remote: StyleMap,
+  at: string
+): StyleMergeResult => {
+  if (!base) {
+    return { styles: mergeWithoutBase(local, remote), conflicts: [] };
+  }
+
+  const styles: StyleMap = {};
+  const conflicts: Array<string> = [];
+  const urls = new Set([
+    ...Object.keys(base),
+    ...Object.keys(local),
+    ...Object.keys(remote),
+  ]);
+
+  urls.forEach(url => {
+    const b = base[url];
+    const restoredLocal = restoreProfiles(b, local[url]);
+    const restoredRemote = restoreProfiles(b, remote[url]);
+    const l = fillGalleryListings(restoredLocal, restoredRemote);
+    const r = fillGalleryListings(restoredRemote, restoredLocal);
+
+    const localChanged = !isEquivalentStyle(b, l, { ignoreActiveProfile });
+    const remoteChanged = !isEquivalentStyle(b, r, { ignoreActiveProfile });
+
+    let result: StyleWithoutUrl | undefined;
+
+    if (!localChanged && !remoteChanged) {
+      result = l;
+    } else if (!localChanged || !remoteChanged) {
+      const changed = localChanged ? l : r;
+      // Merged anyway when profiles are involved, so a stale copy can't
+      // take a profile the other side still has.
+      result =
+        l && r && (b?.profiles || l.profiles || r.profiles)
+          ? mergeStyle(b, l, r, at).style
+          : changed;
+    } else if (!l || !r) {
+      // Deleted on one side and edited on the other keeps the edit; deleted
+      // on both stays deleted.
+      result = l ?? r;
+    } else if (isEquivalentStyle(l, r, { ignoreActiveProfile })) {
+      result = parseTime(l.modifiedTime) >= parseTime(r.modifiedTime) ? l : r;
+    } else {
+      const merged = mergeStyle(b, l, r, at);
+      result = merged.style;
+
+      if (merged.conflicted) {
+        conflicts.push(url);
+      }
+    }
+
+    // Which profile is applied, and the options picked, are this device's.
+    if (result) {
+      styles[url] = l
+        ? keepLocalProfileOptions(
+            activateProfile(result, expandProfiles(l).active),
+            l
+          )
+        : result;
+    }
+  });
+
+  return { styles, conflicts };
+};

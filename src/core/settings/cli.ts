@@ -1,0 +1,64 @@
+import { tryPermissionsCall } from '@stylebot/utils';
+
+/**
+ * What the CLI needs beyond the access to every site Stylebot already has:
+ * its native host. Optional, so it's requested only when it's turned on.
+ */
+export const CLI_PERMISSIONS: chrome.permissions.Permissions = {
+  permissions: ['nativeMessaging'],
+};
+
+/**
+ * Whether this build carries the CLI, which only Chrome and Edge do for now.
+ */
+export const supportsCLI = (): boolean => process.env.STYLEBOT_CLI === 'true';
+
+export const hasCliPermissions = (): Promise<boolean> =>
+  tryPermissionsCall(chrome.permissions.contains, CLI_PERMISSIONS);
+
+/**
+ * Asks for the CLI's permissions. Call it straight from a click, before any
+ * await, since the browser only prompts during a user gesture.
+ */
+export const requestCliPermissions = (): Promise<boolean> =>
+  tryPermissionsCall(chrome.permissions.request, CLI_PERMISSIONS);
+
+/**
+ * Gives back the native host, which cuts the CLI off.
+ */
+export const removeCliPermissions = (): Promise<boolean> =>
+  tryPermissionsCall(chrome.permissions.remove, CLI_PERMISSIONS);
+
+const CLI_CONNECTED_KEY = 'cli-connected';
+
+/**
+ * Records whether the background holds a connection to the CLI's native
+ * host, for the editor to read since it can't ask the port itself.
+ */
+export const setCliConnected = (connected: boolean): Promise<void> =>
+  chrome.storage.local.set({ [CLI_CONNECTED_KEY]: connected });
+
+export const getCliConnected = async (): Promise<boolean> => {
+  const items = await chrome.storage.local.get(CLI_CONNECTED_KEY);
+  return items[CLI_CONNECTED_KEY] === true;
+};
+
+/**
+ * Calls back with each change to whether the CLI is connected, until the
+ * returned function is called.
+ */
+export const onCliConnectedChange = (
+  callback: (connected: boolean) => void
+): (() => void) => {
+  const listener = (
+    changes: Record<string, chrome.storage.StorageChange>,
+    area: string
+  ): void => {
+    if (area === 'local' && CLI_CONNECTED_KEY in changes) {
+      callback(changes[CLI_CONNECTED_KEY].newValue === true);
+    }
+  };
+
+  chrome.storage.onChanged.addListener(listener);
+  return () => chrome.storage.onChanged.removeListener(listener);
+};

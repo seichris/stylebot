@@ -1,0 +1,58 @@
+# Development
+
+Stylebot is built with Vue 2, TypeScript and webpack.
+
+## Setup
+
+- Use the Node version in [`.nvmrc`](../.nvmrc) (e.g. `nvm use`)
+- Run `yarn install`
+
+## Project layout
+
+- `src/` — extension source, grouped into tiers:
+  - `apps/` — what the extension loads: the background worker, content script, popup, options page, editor and its pop-out window, reader, and code editor frame
+  - `features/` — capabilities the apps share, such as sync, style history, readability and the page bridge
+  - `ui/` — shared components, icons and styles
+  - `core/` — the foundation: CSS parsing, saved styles, settings, i18n, shared types and utilities
+  - `assets/` — the manifests, extension icons, bundled fonts and translations (`src/assets/_locales/`)
+- `e2e/` — Playwright end-to-end tests
+- `store/` — promo tiles and screenshots for the store listings
+- `docs/` — developer docs ([index](README.md))
+- `patches/` — patches to dependencies
+
+Imports only point down the tiers: apps build on features, ui and core; features on ui and core; ui on core. Nothing imports an app, and features don't import each other. Code in another folder is imported through its `@stylebot/<folder>` entry, never its files. `yarn lint` enforces both.
+
+## Run a development build
+
+Each command builds in watch mode and opens a fresh browser profile with the extension loaded:
+
+- `yarn dev:chrome`
+- `yarn dev:edge`
+- `yarn dev:firefox`
+
+## Lint and typecheck
+
+- `yarn lint` (or `yarn lint:fix`)
+- `yarn typecheck`
+
+## Storybook
+
+Run `yarn storybook` to browse the popup, options page, editor and shared components on port 6006, with a light/dark toggle in the toolbar.
+
+## Tests
+
+- Run `yarn test` for unit tests
+- Run `yarn test:storybook` for the Storybook interaction tests (every story rendered headless, play functions asserted); `yarn test:storybook --dev --watch` against a running `yarn storybook` while writing them
+- Run `yarn e2e` for the Playwright end-to-end suite (headless Chrome, as in CI); `yarn e2e --firefox --ui` and friends for other browsers and modes — see [`docs/e2e.md`](e2e.md)
+
+## The website
+
+The [stylebot.dev](https://stylebot.dev) site has its own repo, [stylebot-site](https://github.com/ankit/stylebot-site). Some of its screenshots are taken from this repo's build: `yarn capture:gallery`, `yarn capture:manual`, `yarn capture:cli-mode` and `yarn capture:store --phone` save them in `captures/` (or the directory after `--out`), to copy into the site's repo. The gallery's themes are the site's: `yarn capture:gallery` reads them from a stylebot-site checkout beside this repo, or the directory after `--themes`. Development builds also run the site bridge on `localhost`, so gallery installs work against the site's dev server.
+
+## Sync
+
+How sync works, and how to use it from a local build or a fork, is described in [`docs/sync.md`](sync.md).
+
+## Patches
+
+Patches to dependencies are located under `/patches` and are automatically applied on running `yarn` using [patch-package](https://github.com/ds300/patch-package).

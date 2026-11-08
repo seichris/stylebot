@@ -1,0 +1,165 @@
+import Vue from 'vue';
+import type { Store } from 'vuex';
+import Vuex from 'vuex';
+
+import type {
+  CssDeclaration,
+  StylebotOptions,
+  StylebotCommands,
+  ReadabilitySettings,
+  StylebotEditorCommands,
+  GalleryPublished,
+  GalleryInstalled,
+} from '@stylebot/types';
+
+import {
+  defaultOptions,
+  defaultEditorCommands,
+  defaultReadabilitySettings,
+} from '@stylebot/settings';
+
+import { DEFAULT_PROFILE_ID } from '@stylebot/saved-styles';
+import type { PageSnapshot, SelectorAlternatives } from '@stylebot/page-bridge';
+import type { AppliedDeclaration } from '@stylebot/page-bridge';
+import { emptyPageSnapshot } from '@stylebot/page-bridge';
+
+import getters from './getters';
+import actions from './actions';
+import mutations from './mutations';
+import type { UndoStack } from './undo-stack';
+import { emptyUndoStack } from './undo-stack';
+
+/**
+ * Where the editor UI lives: injected into the styled page itself, or in a
+ * separate extension window or the tab's side panel, driving that page over
+ * a tab port.
+ */
+export type EditorHost = 'page' | 'window' | 'sidepanel';
+
+/**
+ * What the browser knows about the styled tab, for the window host to show
+ * which tab it belongs to.
+ */
+export type EditorTab = {
+  title: string;
+  favIconUrl: string;
+  // Whether it is the selected tab of its window right now.
+  active: boolean;
+};
+
+export type EditorProfile = {
+  id: string;
+  name: string;
+};
+
+export type CssSelectorMetadata = {
+  id: number;
+  value: string;
+  styleCount: number;
+};
+
+export type State = {
+  host: EditorHost;
+  page: PageSnapshot;
+  // Whether the page can be reached: always in the page host; in the window
+  // host, whether the port to the tab is up.
+  pageConnected: boolean;
+  // Whether a separate window or side panel is attached to this page; page host only.
+  windowConnected: boolean;
+  // Window host: the tab this window edits.
+  tabId: number | null;
+  tab: EditorTab | null;
+
+  url: string;
+  css: string;
+  profiles: Array<EditorProfile>;
+  activeProfile: string;
+  // Undo/redo trail of css, kept only while the editor is open.
+  undoStack: UndoStack;
+  enabled: boolean;
+  readability: boolean;
+  forceImportant: boolean;
+
+  activeSelector: string;
+  // Computed values on the active selector's first match, for placeholders.
+  computedStyles: Record<string, string>;
+  // The user's Stylebot declarations in effect on the inspected element.
+  appliedDeclarations: Array<AppliedDeclaration>;
+  // What the page's own CSS applies to the inspected element.
+  pageDeclarations: Array<CssDeclaration>;
+  contextMenuSelector: string;
+  selectors: Array<CssSelectorMetadata>;
+
+  help: boolean;
+  // Capturing the page to hand the profile to the gallery site.
+  publishing: boolean;
+  // Page host: hides the panel while the page is captured for the gallery.
+  capturing: boolean;
+  // What this style's profile last published to the gallery, if anything.
+  publishedGalleryStyle: GalleryPublished | null;
+  // The gallery style this profile was installed from, if any.
+  installedGalleryStyle: GalleryInstalled | null;
+  visible: boolean;
+  inspecting: boolean;
+  // The element under the inspector while picking, previewed in the panel.
+  previewSelector: string;
+  // Other selectors for the last picked element.
+  selectorAlternatives: SelectorAlternatives;
+  colorPickerVisible: boolean;
+
+  options: StylebotOptions;
+  commands: StylebotCommands | null;
+  editorCommands: StylebotEditorCommands;
+  readabilitySettings: ReadabilitySettings;
+};
+
+export const createStore = (host: EditorHost): Store<State> => {
+  Vue.use(Vuex);
+
+  return new Vuex.Store<State>({
+    state: {
+      host,
+      page: emptyPageSnapshot(),
+      pageConnected: host === 'page',
+      windowConnected: false,
+      tabId: null,
+      tab: null,
+
+      css: '',
+      profiles: [{ id: DEFAULT_PROFILE_ID, name: '' }],
+      activeProfile: DEFAULT_PROFILE_ID,
+      undoStack: emptyUndoStack(),
+      enabled: true,
+      readability: false,
+      forceImportant: true,
+      url: '',
+
+      selectors: [],
+      activeSelector: '',
+      computedStyles: {},
+      appliedDeclarations: [],
+      pageDeclarations: [],
+      contextMenuSelector: '',
+
+      help: false,
+      publishing: false,
+      capturing: false,
+      publishedGalleryStyle: null,
+      installedGalleryStyle: null,
+      visible: false,
+      inspecting: false,
+      previewSelector: '',
+      selectorAlternatives: { existing: [], candidates: [] },
+      colorPickerVisible: false,
+
+      commands: null,
+      options: defaultOptions,
+      editorCommands: defaultEditorCommands,
+      readabilitySettings: defaultReadabilitySettings,
+    },
+
+    getters,
+    actions,
+    mutations,
+  });
+};
