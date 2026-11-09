@@ -66,6 +66,31 @@ describe('the Dark mode engine', () => {
     expect(darkStylesheet()?.textContent).toBe('');
   });
 
+  it('shares one rule for identical styles and restores existing markers', () => {
+    const main = document.querySelector('main')!;
+    const marker = 'data-stylebot-dark-id';
+    main.innerHTML = `
+      <p ${marker}="original">First</p>
+      <p>Second</p>
+      <p style="background-color: red">Different</p>
+    `;
+    const [first, second, different] = main.querySelectorAll('p');
+
+    applyDarkMode();
+
+    const sharedId = first.getAttribute(marker);
+    expect(sharedId).not.toBe('original');
+    expect(sharedId).toBe(second.getAttribute(marker));
+    expect(sharedId).not.toBe(different.getAttribute(marker));
+    const selector = `[${marker}="${sharedId}"]`;
+    expect(darkStylesheet()?.textContent?.split(selector)).toHaveLength(2);
+
+    removeDarkMode();
+
+    expect(first.getAttribute(marker)).toBe('original');
+    expect(second.hasAttribute(marker)).toBe(false);
+  });
+
   it('leaves a page that declares its own dark scheme alone', () => {
     document.documentElement.style.setProperty('color-scheme', 'light dark');
 
