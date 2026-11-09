@@ -17,7 +17,7 @@ The engine (`features/dark-mode`) is inspired by [WebKit's Adaptive Dark Mode](h
 
 - It leaves a page alone that's already dark, sampled at nine points of the viewport, or whose `<meta name="color-scheme">`, root or body declares a dark or `only light` color scheme. An element that declares one keeps its colors, with everything inside it.
 - Otherwise it darkens light backgrounds and gradients with their hue kept, and lifts text toward a 4.5:1 contrast. Images, videos and canvases keep their colors; neutral inline SVG fills and strokes are adapted.
-- Each pass reads the page's own colors with its stylesheet switched off, so it never adapts colors twice. Changes to the page, loads, hover, focus and resizing schedule another pass.
+- Each pass reads the page's own colors with its stylesheet switched off, so it never adapts colors twice. Changes to the page, loads, focus and resizing schedule another pass. Colors driven only by CSS `:hover` are sampled only when one of those passes runs.
 - It writes one stylesheet and a marker attribute per element, both removed when Dark mode goes; the page's own styles are never edited. The stylesheet goes ahead of the styles Stylebot injects, so a saved style wins where the two tie.
 - Stylebot's own UI, the editor, reader, CLI mode's terminal, the gallery preview and the inspector's overlay, keeps its own themes.
 

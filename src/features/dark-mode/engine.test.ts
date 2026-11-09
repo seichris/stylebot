@@ -83,6 +83,30 @@ describe('the Dark mode engine', () => {
     expect(darkStylesheet()).toBeNull();
   });
 
+  it('keeps the stylesheet in place on hover', () => {
+    const main = document.querySelector('main')!;
+
+    applyDarkMode();
+    const originalRules = darkStylesheet()?.firstChild;
+
+    main.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    main.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    jest.runOnlyPendingTimers();
+
+    expect(darkStylesheet()?.firstChild).toBe(originalRules);
+  });
+
+  it('does not rebuild when its own stylesheet fires a load event', () => {
+    applyDarkMode();
+    const stylesheet = darkStylesheet()!;
+    const originalRules = stylesheet.firstChild;
+
+    stylesheet.dispatchEvent(new Event('load'));
+    jest.runOnlyPendingTimers();
+
+    expect(stylesheet.firstChild).toBe(originalRules);
+  });
+
   it('leaves Stylebot’s own UI to its own themes', () => {
     const terminal = document.createElement('stylebot-cli-mode');
     const editor = document.createElement('div');
