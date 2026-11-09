@@ -331,17 +331,18 @@ const schedule = (): void => {
   }, REFRESH_DELAY_MS);
 };
 
-const LISTENED = [
-  'DOMContentLoaded',
-  'mouseover',
-  'mouseout',
-  'focusin',
-  'focusout',
-] as const;
+const LISTENED = ['DOMContentLoaded', 'focusin', 'focusout'] as const;
+
+const onLoad = (event: Event): void => {
+  // Replacing the generated rules can fire a load event on this stylesheet.
+  if (event.target !== stylesheet) {
+    schedule();
+  }
+};
 
 /**
  * Turns Dark mode on for the document, and keeps it current as the page
- * changes, loads more, or reacts to hover and focus.
+ * changes, loads more, or reacts to focus.
  */
 export const applyDarkMode = (): void => {
   if (enabled) {
@@ -365,7 +366,7 @@ export const applyDarkMode = (): void => {
   });
 
   LISTENED.forEach(type => document.addEventListener(type, schedule));
-  document.addEventListener('load', schedule, true);
+  document.addEventListener('load', onLoad, true);
   window.addEventListener('resize', schedule);
   render();
 };
@@ -385,7 +386,7 @@ export const removeDarkMode = (): void => {
 
   timer = undefined;
   LISTENED.forEach(type => document.removeEventListener(type, schedule));
-  document.removeEventListener('load', schedule, true);
+  document.removeEventListener('load', onLoad, true);
   window.removeEventListener('resize', schedule);
   stylesheet?.remove();
   stylesheet = undefined;
