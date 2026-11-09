@@ -70,3 +70,44 @@ export const adaptForeground = (
 
   return result;
 };
+
+const cacheColors = <T>(convert: (value: string) => T) => {
+  const cache = new Map<string, T>();
+
+  return (value: string): T => {
+    const cached = cache.get(value);
+
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const result = convert(value);
+    cache.set(value, result);
+    return result;
+  };
+};
+
+const cacheByBackground = <T>(
+  convert: (value: string, background: tinycolor.Instance) => T
+) => {
+  const cache = new Map<tinycolor.Instance, (value: string) => T>();
+
+  return (value: string, background: tinycolor.Instance): T => {
+    let convertColor = cache.get(background);
+
+    if (!convertColor) {
+      convertColor = cacheColors(color => convert(color, background));
+      cache.set(background, convertColor);
+    }
+
+    return convertColor(value);
+  };
+};
+
+export const createPalette = () => ({
+  background: cacheColors(adaptBackground),
+  foreground: cacheByBackground((value, background) =>
+    adaptForeground(value, background).toRgbString()
+  ),
+  composite: cacheByBackground(composite),
+});

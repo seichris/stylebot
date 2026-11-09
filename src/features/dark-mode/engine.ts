@@ -1,6 +1,6 @@
 import tinycolor from 'tinycolor2';
 
-import { adaptBackground, adaptForeground, composite } from './colors';
+import { composite, createPalette } from './colors';
 
 const ATTRIBUTE = 'data-stylebot-dark-id';
 const STYLESHEET_ID = 'stylebot-dark-mode';
@@ -13,33 +13,42 @@ const EXCLUDE = `${STYLEBOT_UI}, script, style, link, meta, head, img, picture, 
 
 const REFRESH_DELAY_MS = 150;
 
+type Palette = ReturnType<typeof createPalette>;
+
 let enabled = false;
 let stylesheet: HTMLStyleElement | undefined;
 let observer: MutationObserver | undefined;
 let timer: number | undefined;
 let nextId = 0;
-const elements = new Map<Element, { id: string; previous: string | null }>();
+let ruleIds = new Map<string, string>();
+const elements = new Map<Element, string | null>();
 
 /**
- * The selector of a marker attribute the element gets for its rule, keeping
- * whatever value the attribute had to put back when Dark mode goes.
+ * Updates the markers after all computed styles have been read. Elements
+ * that no longer get a rule must stop matching their old, shared rule.
  */
-const selectorFor = (element: Element): string => {
-  let entry = elements.get(element);
+const updateMarkers = (markers: Map<Element, string>): void => {
+  elements.forEach((previous, element) => {
+    if (!markers.has(element)) {
+      restoreMarker(element, previous);
+      elements.delete(element);
+    }
+  });
 
-  if (!entry) {
-    entry = { id: String(++nextId), previous: element.getAttribute(ATTRIBUTE) };
-    elements.set(element, entry);
-    element.setAttribute(ATTRIBUTE, entry.id);
-  }
+  markers.forEach((id, element) => {
+    const current = element.getAttribute(ATTRIBUTE);
 
-  return `[${ATTRIBUTE}="${entry.id}"]`;
+    if (!elements.has(element)) {
+      elements.set(element, current);
+    }
+
+    if (current !== id) {
+      element.setAttribute(ATTRIBUTE, id);
+    }
+  });
 };
 
-const restoreMarker = (
-  element: Element,
-  { previous }: { previous: string | null }
-): void => {
+const restoreMarker = (element: Element, previous: string | null): void => {
   if (previous === null) {
     element.removeAttribute(ATTRIBUTE);
   } else {
@@ -60,13 +69,13 @@ const optedOut = (style: CSSStyleDeclaration): boolean => {
  * A gradient with its colors darkened; any background with an image in it,
  * a photo or a sprite, is left alone.
  */
-const transformGradient = (value: string): string => {
+const transformGradient = (value: string, palette: Palette): string => {
   if (!value.includes('gradient(') || value.includes('url(')) {
     return value;
   }
 
   return value.replace(/rgba?\([^)]+\)/g, color =>
-    adaptBackground(color).toRgbString()
+    palette.background(color).toRgbString()
   );
 };
 
@@ -129,36 +138,34 @@ const insertStylesheet = (style: HTMLStyleElement): void => {
 };
 
 /**
- * The rules for one element: its colors, borders and gradients adapted to
- * the dark background it ends up on, and its pseudo-elements'.
+ * The rules for one element, without the shared selector prefix. Includes
+ * its colors, borders, gradients, and pseudo-elements.
  */
 const rulesFor = (
   element: Element,
   style: CSSStyleDeclaration,
   background: tinycolor.Instance,
-  effectiveBackground: tinycolor.Instance
+  effectiveBackground: tinycolor.Instance,
+  palette: Palette
 ): Array<string> => {
   const declarations = [
-    `color: ${adaptForeground(
-      style.color,
-      effectiveBackground
-    ).toRgbString()} !important`,
+    `color: ${palette.foreground(style.color, effectiveBackground)} !important`,
     `background-color: ${background.toRgbString()} !important`,
   ];
 
   ['top', 'right', 'bottom', 'left'].forEach(side => {
-    const color = style.getPropertyValue(`border-${side}-color`);
+    const color = palette.background(
+      style.getPropertyValue(`border-${side}-color`)
+    );
 
-    if (tinycolor(color).isValid()) {
+    if (color.isValid()) {
       declarations.push(
-        `border-${side}-color: ${adaptBackground(
-          color
-        ).toRgbString()} !important`
+        `border-${side}-color: ${color.toRgbString()} !important`
       );
     }
   });
 
-  const gradient = transformGradient(style.backgroundImage);
+  const gradient = transformGradient(style.backgroundImage, palette);
 
   if (gradient !== style.backgroundImage) {
     declarations.push(`background-image: ${gradient} !important`);
@@ -172,17 +179,16 @@ const rulesFor = (
 
       if (color.isValid() && color.getAlpha() > 0 && color.toHsl().s < 0.15) {
         declarations.push(
-          `${property}: ${adaptForeground(
+          `${property}: ${palette.foreground(
             value,
             effectiveBackground
-          ).toRgbString()} !important`
+          )} !important`
         );
       }
     });
   }
 
-  const selector = selectorFor(element);
-  const rules = [`${selector} { ${declarations.join('; ')}; }`];
+  const rules = [` { ${declarations.join('; ')}; }`];
 
   ['::before', '::after'].forEach(pseudo => {
     const pseudoStyle = getComputedStyle(element, pseudo);
@@ -194,14 +200,14 @@ const rulesFor = (
       return;
     }
 
-    const bg = adaptBackground(pseudoStyle.backgroundColor);
-    const fg = adaptForeground(
+    const bg = palette.background(pseudoStyle.backgroundColor).toRgbString();
+    const fg = palette.foreground(
       pseudoStyle.color,
-      composite(bg.toRgbString(), effectiveBackground)
+      palette.composite(bg, effectiveBackground)
     );
 
     rules.push(
-      `${selector}${pseudo} { color: ${fg.toRgbString()} !important; background-color: ${bg.toRgbString()} !important; }`
+      `${pseudo} { color: ${fg} !important; background-color: ${bg} !important; }`
     );
   });
 
@@ -234,6 +240,8 @@ const render = (): void => {
         .querySelector('meta[name="color-scheme"]')
         ?.getAttribute('content') ?? '';
     const rules: Array<string> = [];
+    const markers = new Map<Element, string>();
+    const currentRuleIds = new Map<string, string>();
 
     if (
       !/\b(dark|only)\b/.test(declaredScheme) &&
@@ -244,7 +252,8 @@ const render = (): void => {
     ) {
       const backgrounds = new Map<Element, tinycolor.Instance>();
       const excluded = new Set<Element>();
-      const darkCanvas = adaptBackground(pageBackground.toRgbString());
+      const palette = createPalette();
+      const darkCanvas = palette.background(pageBackground.toRgbString());
 
       backgrounds.set(document.documentElement, darkCanvas);
       rules.push(
@@ -273,18 +282,37 @@ const render = (): void => {
         const background =
           element === document.documentElement
             ? darkCanvas
-            : adaptBackground(style.backgroundColor);
-        const effectiveBackground = composite(
+            : palette.background(style.backgroundColor);
+        const effectiveBackground = palette.composite(
           background.toRgbString(),
           parentBackground
         );
 
         backgrounds.set(element, effectiveBackground);
-        rules.push(
-          ...rulesFor(element, style, background, effectiveBackground)
+        const elementRules = rulesFor(
+          element,
+          style,
+          background,
+          effectiveBackground,
+          palette
         );
+        const key = elementRules.join('\n');
+        let id = currentRuleIds.get(key);
+
+        if (!id) {
+          id = ruleIds.get(key) ?? String(++nextId);
+          currentRuleIds.set(key, id);
+          const selector = `[${ATTRIBUTE}="${id}"]`;
+
+          elementRules.forEach(rule => rules.push(selector + rule));
+        }
+
+        markers.set(element, id);
       });
     }
+
+    updateMarkers(markers);
+    ruleIds = currentRuleIds;
 
     if (!stylesheet) {
       stylesheet = document.createElement('style');
@@ -296,13 +324,6 @@ const render = (): void => {
     if (!stylesheet.isConnected) {
       insertStylesheet(stylesheet);
     }
-
-    elements.forEach((entry, element) => {
-      if (!element.isConnected) {
-        restoreMarker(element, entry);
-        elements.delete(element);
-      }
-    });
   } finally {
     if (stylesheet?.sheet) {
       stylesheet.sheet.disabled = false;
@@ -390,6 +411,7 @@ export const removeDarkMode = (): void => {
   window.removeEventListener('resize', schedule);
   stylesheet?.remove();
   stylesheet = undefined;
-  elements.forEach((entry, element) => restoreMarker(element, entry));
+  elements.forEach((previous, element) => restoreMarker(element, previous));
   elements.clear();
+  ruleIds.clear();
 };
